@@ -9,6 +9,9 @@ import tempfile
 import shutil
 from datetime import datetime
 
+# 導入字幕預覽模組
+from subtitle_preview import SubtitlePreviewModule
+
 class FFmpegSubtitleGUI:
     def __init__(self, root):
         self.root = root
@@ -44,6 +47,30 @@ class FFmpegSubtitleGUI:
         
         # 建立使用者介面
         self.create_widgets()
+        
+        # 初始化字幕預覽模組
+        self.preview_module = SubtitlePreviewModule(
+            self.root,
+            self.video_path,
+            self.subtitle_path,
+            self.font_var,
+            self.font_size_var,
+            self.font_color_var,
+            self.border_style_var,
+            self.pos_x_var,
+            self.pos_y_var,
+            self.transparency_var,
+            self.margin_var,
+            self.log_to_gui
+        )
+        
+        # 添加預覽按鈕
+        if hasattr(self, 'subtitle_frame'):
+            try:
+                preview_button = self.preview_module.create_preview_button(self.subtitle_frame)
+                preview_button.grid(row=7, column=1, sticky=tk.W, pady=10)
+            except Exception as e:
+                self.log_to_gui(f"無法創建預覽按鈕: {str(e)}", "WARNING")
         
     def setup_logging(self):
         """初始化日誌系統"""
@@ -190,6 +217,9 @@ class FFmpegSubtitleGUI:
         ttk.Scale(margin_frame, from_=0, to=100, orient=tk.HORIZONTAL, 
                  variable=self.margin_var, length=200).pack(side=tk.LEFT)
         ttk.Label(margin_frame, textvariable=self.margin_var).pack(side=tk.LEFT, padx=5)
+        
+        # 儲存字幕框架供後續使用
+        self.subtitle_frame = subtitle_frame
         
         action_frame = ttk.Frame(main_frame, padding="10")
         action_frame.pack(fill=tk.X, padx=5, pady=10)
