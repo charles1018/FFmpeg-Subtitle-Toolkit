@@ -15,7 +15,7 @@ FFmpeg字幕工具箱是一個使用Python和Tkinter開發的GUI應用程式，�
 
 ## 系統需求
 
-- Python 3.6 或更高版本
+- Python 3.12（推薦，使用 uv 管理）
 - FFmpeg（需預先安裝並設置到系統環境變數）
 - Windows, macOS 或 Linux 系統
 
@@ -60,10 +60,24 @@ sudo apt update
 sudo apt install ffmpeg
 ```
 
-### 2. 安裝Python依賴
+### 2. 安裝與執行（使用 uv）
 
 ```bash
+# 方式 A：直接執行檔（無需安裝套件）
+uv venv
+uv pip install -r requirements.txt
+uv run python ffmpeg_subtitle_toolkit.py
+
+# 方式 B：安裝專案並使用 console script（推薦）
+uv venv
+uv pip install -e .
+uv run ffsubtool
+```
+
+如需使用傳統方式（不建議）：
+```bash
 pip install -r requirements.txt
+python ffmpeg_subtitle_toolkit.py
 ```
 
 ## 使用方法

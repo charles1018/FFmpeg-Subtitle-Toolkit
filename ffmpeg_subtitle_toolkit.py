@@ -2,12 +2,16 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk, scrolledtext, colorchooser
 import subprocess
 import os
+import sys
 import threading
 import re
 import logging
 import tempfile
 import shutil
+from shutil import which
 from datetime import datetime
+
+__version__ = "0.1.0"
 
 class FFmpegSubtitleGUI:
     def __init__(self, root):
@@ -65,27 +69,33 @@ class FFmpegSubtitleGUI:
         logging.info("日誌系統初始化完成")
     
     def check_ffmpeg(self):
-        """檢查系統中是否已安裝並可用 ffmpeg"""
+        """檢查系統中是否已安裝並可用 ffmpeg（不依賴系統 shell）"""
         try:
             logging.info("檢查 ffmpeg 是否已安裝")
-            result = subprocess.run(
-                ["ffmpeg", "-version"], 
-                capture_output=True, 
-                text=True,
-                shell=True,
-                encoding='utf-8',
-                errors='replace'
-            )
-            if result.returncode != 0:
+            if which("ffmpeg") is None:
                 error_msg = "無法找到系統中的 ffmpeg，請確認已安裝並設定環境變數"
                 logging.error(error_msg)
                 messagebox.showerror("錯誤", error_msg)
                 return False
-            
-            ffmpeg_version = result.stdout.split('\n')[0]
+
+            result = subprocess.run(
+                ["ffmpeg", "-version"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+            if result.returncode != 0:
+                error_msg = "ffmpeg 執行異常，請確認安裝是否正確"
+                logging.error(error_msg)
+                messagebox.showerror("錯誤", error_msg)
+                return False
+
+            ffmpeg_version = (result.stdout or result.stderr).split('\n')[0]
             logging.info(f"檢測到 ffmpeg: {ffmpeg_version}")
             return True
-            
+
         except Exception as e:
             error_msg = f"檢查 ffmpeg 時發生錯誤: {str(e)}"
             logging.error(error_msg)
@@ -223,8 +233,10 @@ class FFmpegSubtitleGUI:
             try:
                 if os.name == 'nt':  # Windows
                     os.startfile(self.log_file)
-                elif os.name == 'posix':  # macOS/Linux
+                elif sys.platform == 'darwin':  # macOS
                     subprocess.run(['open', self.log_file], check=False)
+                else:  # Linux/其他 POSIX
+                    subprocess.run(['xdg-open', self.log_file], check=False)
             except Exception as e:
                 messagebox.showerror("錯誤", f"無法開啟日誌檔案: {str(e)}")
         else:
@@ -572,7 +584,14 @@ class FFmpegSubtitleGUI:
             if result == 'yes':
                 self.open_log_file()
 
-if __name__ == "__main__":
+def main(argv: list[str] | None = None) -> int:
+    """以標準入口執行 GUI，方便透過 `uv run` 啟動。"""
+    _ = argv  # 預留參數解析擴充
     root = tk.Tk()
     app = FFmpegSubtitleGUI(root)
     root.mainloop()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

@@ -1,0 +1,30 @@
+[project]
+name = "ffmpeg-subtitle-toolkit"
+version = "0.1.0"
+description = "GUI toolkit to burn subtitles into videos using FFmpeg (Tkinter)"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+  { name = "charles1018", email = "chmadux8@gmail.com" }
+]
+dependencies = [
+  "Pillow>=9.0.0",
+]
+
+[project.scripts]
+ffsubtool = "ffmpeg_subtitle_toolkit:main"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.setuptools]
+py-modules = ["ffmpeg_subtitle_toolkit"]
+
+[dependency-groups]
+dev = [
+  "ruff>=0.5.0",
+  "pytest>=7.0.0",
+  "jsonschema>=4.17.3",
+]
