@@ -254,19 +254,38 @@ class FFmpegSubtitleGUI:
         style.configure("Accent.TButton", font=("Arial", 12, "bold"))
     
     def open_log_file(self):
-        """開啟日誌檔案"""
-        if hasattr(self, 'log_file') and os.path.exists(self.log_file):
-            try:
-                if os.name == 'nt':  # Windows
-                    os.startfile(self.log_file)
-                elif sys.platform == 'darwin':  # macOS
-                    subprocess.run(['open', self.log_file], check=False)
-                else:  # Linux/其他 POSIX
-                    subprocess.run(['xdg-open', self.log_file], check=False)
-            except Exception as e:
-                messagebox.showerror("錯誤", f"無法開啟日誌檔案: {str(e)}")
-        else:
+        """開啟日誌檔案（包含路徑安全驗證）"""
+        if not hasattr(self, 'log_file'):
             messagebox.showinfo("提示", "日誌檔案尚未建立")
+            return
+
+        if not os.path.exists(self.log_file):
+            messagebox.showinfo("提示", "日誌檔案尚未建立")
+            return
+
+        try:
+            # 規範化路徑，防止路徑遍歷攻擊
+            log_file_path = os.path.abspath(self.log_file)
+
+            # 確認檔案在預期的日誌目錄內
+            log_dir = os.path.join(os.path.expanduser("~"), "FFmpegGUI_Logs")
+            expected_log_dir = os.path.abspath(log_dir)
+
+            if not log_file_path.startswith(expected_log_dir):
+                messagebox.showerror("錯誤", "日誌檔案路徑異常，無法開啟")
+                logging.warning(f"嘗試開啟異常路徑的日誌檔案: {log_file_path}")
+                return
+
+            # 開啟日誌檔案
+            if os.name == 'nt':  # Windows
+                os.startfile(log_file_path)
+            elif sys.platform == 'darwin':  # macOS
+                subprocess.run(['open', log_file_path], check=False)
+            else:  # Linux/其他 POSIX
+                subprocess.run(['xdg-open', log_file_path], check=False)
+
+        except Exception as e:
+            messagebox.showerror("錯誤", f"無法開啟日誌檔案: {str(e)}")
     
     def log_to_gui(self, message, level="INFO"):
         """將訊息記錄到 GUI 和日誌檔案"""
