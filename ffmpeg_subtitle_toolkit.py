@@ -14,6 +14,11 @@ from datetime import datetime
 __version__ = "0.1.0"
 
 class FFmpegSubtitleGUI:
+    """FFmpeg 字幕燒錄工具的主要 GUI 類別"""
+
+    # 類級別常數
+    BORDER_STYLE_MAP = {"無邊框": 0, "普通邊框": 1, "陰影": 4, "半透明背景": 3}
+
     def __init__(self, root):
         self.root = root
         self.root.title("FFmpeg 字幕燒錄工具")
@@ -52,20 +57,18 @@ class FFmpegSubtitleGUI:
     def setup_logging(self):
         """初始化日誌系統"""
         log_dir = os.path.join(os.path.expanduser("~"), "FFmpegGUI_Logs")
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-            
-        current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_file = os.path.join(log_dir, f"ffmpeg_gui_{current_time}.log")
-        
+        os.makedirs(log_dir, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.log_file = os.path.join(log_dir, f"ffmpeg_gui_{timestamp}.log")
+
         logging.basicConfig(
             level=logging.DEBUG,
             format='%(asctime)s - %(levelname)s - %(message)s',
-            filename=log_file,
+            filename=self.log_file,
             filemode='w'
         )
-        
-        self.log_file = log_file
+
         logging.info("日誌系統初始化完成")
     
     def check_ffmpeg(self):
@@ -383,10 +386,10 @@ class FFmpegSubtitleGUI:
         """清理臨時檔案和目錄"""
         if self.temp_dir and os.path.exists(self.temp_dir):
             try:
-                shutil.rmtree(self.temp_dir, ignore_errors=True)
+                shutil.rmtree(self.temp_dir)
                 self.log_to_gui("臨時檔案已清理")
-            except Exception as e:
-                self.log_to_gui(f"清理臨時檔案時發生錯誤: {str(e)}", "WARNING")
+            except OSError as e:
+                self.log_to_gui(f"清理臨時檔案時發生錯誤: {e}", "WARNING")
     
     def custom_color(self):
         """開啟自定義字體顏色的選擇器"""
@@ -412,8 +415,7 @@ class FFmpegSubtitleGUI:
             font = self.font_var.get()
             font_size = self.font_size_var.get()
             font_color = self.font_color_var.get()
-            border_style_map = {"無邊框": 0, "普通邊框": 1, "陰影": 4, "半透明背景": 3}
-            border_style = border_style_map[self.border_style_var.get()]
+            border_style = self.BORDER_STYLE_MAP[self.border_style_var.get()]
             pos_x = self.pos_x_var.get()
             pos_y = self.pos_y_var.get()
             margin_v = self.margin_var.get()
@@ -584,14 +586,13 @@ class FFmpegSubtitleGUI:
             if result == 'yes':
                 self.open_log_file()
 
-def main(argv: list[str] | None = None) -> int:
-    """以標準入口執行 GUI，方便透過 `uv run` 啟動。"""
-    _ = argv  # 預留參數解析擴充
+def main() -> int:
+    """啟動 GUI 應用程式。"""
     root = tk.Tk()
-    app = FFmpegSubtitleGUI(root)
+    FFmpegSubtitleGUI(root)
     root.mainloop()
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:]))
+    raise SystemExit(main())
