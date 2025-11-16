@@ -307,12 +307,10 @@ class FFmpegSubtitleGUI:
         if filepath:
             self.video_path.set(filepath)
             self.log_to_gui(f"已選擇影片: {filepath}")
-            
+
             if not self.output_path.get():
-                dirname = os.path.dirname(filepath)
-                basename = os.path.basename(filepath)
-                name, ext = os.path.splitext(basename)
-                output_name = os.path.join(dirname, f"{name}_output.mp4")
+                base_path = os.path.splitext(filepath)[0]
+                output_name = f"{base_path}_output.mp4"
                 self.output_path.set(output_name)
                 self.log_to_gui(f"自動設定輸出路徑: {output_name}")
     
