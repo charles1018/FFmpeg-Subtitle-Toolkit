@@ -19,6 +19,14 @@ class FFmpegSubtitleGUI:
     # 類級別常數
     BORDER_STYLE_MAP = {"無邊框": 0, "普通邊框": 1, "陰影": 4, "半透明背景": 3}
 
+    # NVENC 錯誤檢測模式（使用正則表達式）
+    NVENC_ERROR_PATTERNS = [
+        r"No NVENC capable devices found",
+        r"Error initializing",
+        r"nvenc.*not available",
+        r"Cannot load .*nvenc",
+    ]
+
     def __init__(self, root):
         self.root = root
         self.root.title("FFmpeg 字幕燒錄工具")
@@ -586,6 +594,18 @@ class FFmpegSubtitleGUI:
         stderr = ''.join(stderr_output)
         return return_code, stderr
 
+    def _is_nvenc_error(self, stderr):
+        """
+        檢查 FFmpeg 錯誤輸出是否為 NVENC 相關錯誤
+
+        參數:
+            stderr: FFmpeg 的錯誤輸出字串
+
+        返回:
+            bool: 如果是 NVENC 錯誤則返回 True，否則返回 False
+        """
+        return any(re.search(pattern, stderr, re.IGNORECASE) for pattern in self.NVENC_ERROR_PATTERNS)
+
     def _copy_output_file(self, temp_output_path, final_output_path):
         """
         將臨時輸出檔案複製到最終位置
@@ -681,7 +701,7 @@ class FFmpegSubtitleGUI:
                     break
                 else:
                     # 檢查是否為 NVENC 錯誤（僅在 GPU 策略時）
-                    if strategy['name'] == "GPU" and ("No NVENC capable devices found" in stderr or "Error initializing" in stderr):
+                    if strategy['name'] == "GPU" and self._is_nvenc_error(stderr):
                         self.log_to_gui("NVENC 不可用，切換至 CPU 編碼...", "WARNING")
                         continue
                     else:
