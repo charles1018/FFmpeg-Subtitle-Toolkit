@@ -438,19 +438,135 @@ class FFmpegSubtitleGUI:
         }
 
         return ",".join(f"{k}={v}" for k, v in style_params.items())
-    
+
+    def _detect_video_size(self, video_path):
+        """
+        檢測影片的解析度尺寸
+
+        參數:
+            video_path: 影片檔案路徑
+
+        返回:
+            str: 影片尺寸字串（例如 "1920x1080"），如果檢測失敗則返回預設值
+        """
+        video_info_cmd = ["ffmpeg", "-i", video_path, "-hide_banner"]
+        video_info_process = subprocess.Popen(
+            video_info_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding='utf-8', errors='replace'
+        )
+        _, video_info = video_info_process.communicate()
+
+        size_match = re.search(r'(\d{2,4})x(\d{2,4})', video_info)
+        video_size = size_match.group(0) if size_match else "1920x1080"
+        self.log_to_gui(f"檢測到影片尺寸: {video_size}")
+        return video_size
+
+    def _build_ffmpeg_command(self, video_path, subtitle_filename, output_path,
+                              codec, preset, subtitle_style, video_size, extra_args):
+        """
+        構建 FFmpeg 命令列表
+
+        參數:
+            video_path: 輸入影片路徑
+            subtitle_filename: 字幕檔案名稱（相對路徑）
+            output_path: 輸出影片路徑
+            codec: 影片編碼器
+            preset: 編碼品質預設
+            subtitle_style: 字幕樣式字串
+            video_size: 影片尺寸
+            extra_args: 額外的 FFmpeg 參數列表
+
+        返回:
+            list: FFmpeg 命令列表
+        """
+        ffmpeg_cmd = ["ffmpeg", "-y"] + extra_args + [
+            "-i", video_path,
+            "-c:v", codec,
+            "-preset", preset,
+            "-c:a", "copy",
+            "-vf", f"subtitles='{subtitle_filename}':force_style='{subtitle_style}':original_size={video_size}",
+            output_path
+        ]
+        return ffmpeg_cmd
+
+    def _execute_ffmpeg(self, ffmpeg_cmd, label, cwd):
+        """
+        執行 FFmpeg 命令並監控進度
+
+        參數:
+            ffmpeg_cmd: FFmpeg 命令列表
+            label: 處理標籤（用於顯示進度）
+            cwd: 工作目錄
+
+        返回:
+            tuple: (return_code, stderr) - 返回碼和錯誤輸出
+        """
+        cmd_str = " ".join(ffmpeg_cmd)
+        self.log_to_gui(f"執行命令: {cmd_str}")
+        logging.info(f"FFmpeg 命令: {cmd_str}")
+
+        process = subprocess.Popen(
+            ffmpeg_cmd,
+            stderr=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            cwd=cwd
+        )
+
+        # 即時顯示 FFmpeg 的處理進度
+        stderr_output = []
+        while True:
+            output_line = process.stderr.readline()
+            if output_line == '' and process.poll() is not None:
+                break
+            if output_line:
+                stderr_output.append(output_line)
+                logging.info(output_line.strip())
+                if "frame=" in output_line or "speed=" in output_line:
+                    self.progress_var.set(f"{label}: " + output_line.strip())
+                    self.root.update_idletasks()
+
+        return_code = process.poll()
+        stderr = ''.join(stderr_output)
+        return return_code, stderr
+
+    def _copy_output_file(self, temp_output_path, final_output_path):
+        """
+        將臨時輸出檔案複製到最終位置
+
+        參數:
+            temp_output_path: 臨時輸出檔案路徑
+            final_output_path: 最終輸出檔案路徑
+
+        返回:
+            bool: 複製是否成功
+        """
+        if os.path.exists(temp_output_path):
+            shutil.copy2(temp_output_path, final_output_path)
+            self.log_to_gui(f"已將處理後的影片複製到: {final_output_path}")
+            return True
+        else:
+            self.log_to_gui("處理完成但找不到輸出檔案", "ERROR")
+            return False
+
     def process_video(self):
-        """處理影片及燒錄字幕"""
+        """處理影片及燒錄字幕（使用編碼策略模式，支援 GPU/CPU 自動回退）"""
         try:
             self.progress_var.set("處理中...")
             self.log_to_gui("開始處理影片", "INFO")
             self.root.update_idletasks()
-            
-            # 建立臨時檔案以避免路徑中的特殊字元問題
+
+            # 準備臨時檔案和配置參數
             temp_video_path, temp_subtitle_path, temp_output_path = self.create_temp_files()
-            
-            codec = "h264_nvenc" if self.codec_var.get() == "H.264" else "hevc_nvenc"
+
+            # 收集編碼參數
+            gpu_codec = "h264_nvenc" if self.codec_var.get() == "H.264" else "hevc_nvenc"
+            cpu_codec = "libx264" if self.codec_var.get() == "H.264" else "libx265"
             preset = self.preset_var.get()
+
+            # 收集字幕樣式參數
             font = self.font_var.get()
             font_size = self.font_size_var.get()
             font_color = self.font_color_var.get()
@@ -458,167 +574,96 @@ class FFmpegSubtitleGUI:
             pos_x = self.pos_x_var.get()
             pos_y = self.pos_y_var.get()
             margin_v = self.margin_var.get()
-            transparency = int(self.transparency_var.get())  # 透明度百分比
-            
-            self.log_to_gui(f"編碼: {codec}, 品質: {preset}")
-            self.log_to_gui(f"字型: {font}, 大小: {font_size}, 顏色: {font_color}")
-            self.log_to_gui(f"邊框樣式: {self.border_style_var.get()}, 位置: ({pos_x}, {pos_y}), 邊距: {margin_v}, 透明度: {transparency}%")
-            
-            alpha = int((100 - transparency) * 255 / 100)
-            alpha_hex = f"{alpha:02x}"
-            back_color = f"&H{alpha_hex}000000"
-            
-            video_info_cmd = ["ffmpeg", "-i", temp_video_path, "-hide_banner"]
-            video_info_process = subprocess.Popen(
-                video_info_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                text=True, encoding='utf-8', errors='replace'
-            )
-            _, video_info = video_info_process.communicate()
-            
-            # 從資訊中提取影片尺寸
-            size_match = re.search(r'(\d{2,4})x(\d{2,4})', video_info)
-            video_size = size_match.group(0) if size_match else "1920x1080"
-            self.log_to_gui(f"檢測到影片尺寸: {video_size}")
+            transparency = int(self.transparency_var.get())
 
-            # 構建字幕樣式字串
+            self.log_to_gui(f"編碼器: {self.codec_var.get()}, 品質: {preset}")
+            self.log_to_gui(f"字型: {font}, 大小: {font_size}, 顏色: {font_color}")
+            self.log_to_gui(f"邊框: {self.border_style_var.get()}, 位置: ({pos_x}, {pos_y}), 邊距: {margin_v}, 透明度: {transparency}%")
+
+            # 計算背景顏色（包含透明度）
+            alpha = int((100 - transparency) * 255 / 100)
+            back_color = f"&H{alpha:02x}000000"
+
+            # 檢測影片尺寸
+            video_size = self._detect_video_size(temp_video_path)
+
+            # 構建字幕樣式
             subtitle_style = self._build_subtitle_style(
                 font, font_size, font_color, back_color,
                 border_style, pos_x, pos_y, margin_v
             )
-            
-            # 建構 FFmpeg 命令，使用列表避免引號和轉義問題
+
             subtitle_filename = os.path.basename(temp_subtitle_path)
-            
-            # 使用絕對路徑，避免使用 cd 切換目錄
-            ffmpeg_cmd = [
-                "ffmpeg", "-y", "-hwaccel", "cuda",
-                "-i", temp_video_path,
-                "-c:v", codec,
-                "-preset", preset,
-                "-c:a", "copy",
-                "-vf", f"subtitles='{subtitle_filename}':force_style='{subtitle_style}':original_size={video_size}",
-                temp_output_path
+
+            # 定義編碼策略：GPU 優先，CPU 作為回退
+            encoding_strategies = [
+                {"name": "GPU", "codec": gpu_codec, "extra_args": ["-hwaccel", "cuda"]},
+                {"name": "CPU", "codec": cpu_codec, "extra_args": []}
             ]
-            
-            cmd_str = " ".join(ffmpeg_cmd)
-            self.log_to_gui(f"執行命令: {cmd_str}")
-            logging.info(f"FFmpeg 命令: {cmd_str}")
-            
-            # 修改當前工作目錄為臨時目錄
-            cwd = os.getcwd()  # 儲存當前工作目錄
-            os.chdir(self.temp_dir)  # 切換到臨時目錄
-            
-            try:
-                process = subprocess.Popen(
-                    ffmpeg_cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE,
-                    text=True, encoding='utf-8', errors='replace'
+
+            # 嘗試各種編碼策略，直到成功
+            processing_success = False
+            for strategy in encoding_strategies:
+                self.log_to_gui(f"嘗試使用 {strategy['name']} 編碼...")
+
+                # 構建 FFmpeg 命令
+                ffmpeg_cmd = self._build_ffmpeg_command(
+                    temp_video_path, subtitle_filename, temp_output_path,
+                    strategy['codec'], preset, subtitle_style, video_size,
+                    strategy['extra_args']
                 )
-                
-                # 即時顯示 FFmpeg 的處理進度
-                while True:
-                    output_line = process.stderr.readline()
-                    if output_line == '' and process.poll() is not None:
-                        break
-                    if output_line:
-                        logging.info(output_line.strip())
-                        if "frame=" in output_line or "speed=" in output_line:
-                            self.progress_var.set("處理中: " + output_line.strip())
-                            self.root.update_idletasks()
-                
-                return_code = process.poll()
-                
-                if return_code != 0:
-                    stderr = process.stderr.read() if process.stderr else ""
-                    error_detected = False
-                    
-                    # 檢查是否有 NVENC 錯誤，若有則嘗試使用 CPU 編碼
-                    if "No NVENC capable devices found" in stderr or "Error initializing" in stderr:
+
+                # 執行 FFmpeg（使用 cwd 參數指定工作目錄，避免 os.chdir()）
+                return_code, stderr = self._execute_ffmpeg(
+                    ffmpeg_cmd,
+                    f"{strategy['name']} 處理中",
+                    self.temp_dir
+                )
+
+                # 檢查執行結果
+                if return_code == 0:
+                    processing_success = True
+                    self.log_to_gui(f"{strategy['name']} 編碼成功", "SUCCESS")
+                    break
+                else:
+                    # 檢查是否為 NVENC 錯誤（僅在 GPU 策略時）
+                    if strategy['name'] == "GPU" and ("No NVENC capable devices found" in stderr or "Error initializing" in stderr):
                         self.log_to_gui("NVENC 不可用，切換至 CPU 編碼...", "WARNING")
-                        self.progress_var.set("NVENC 不可用，切換至 CPU 編碼...")
-                        self.root.update_idletasks()
-                        
-                        cpu_codec = "libx264" if self.codec_var.get() == "H.264" else "libx265"
-                        cpu_cmd = [
-                            "ffmpeg", "-y",
-                            "-i", temp_video_path,
-                            "-c:v", cpu_codec,
-                            "-preset", preset,
-                            "-c:a", "copy",
-                            "-vf", f"subtitles='{subtitle_filename}':force_style='{subtitle_style}':original_size={video_size}",
-                            temp_output_path
-                        ]
-                        
-                        cpu_cmd_str = " ".join(cpu_cmd)
-                        self.log_to_gui(f"使用 CPU 編碼，命令: {cpu_cmd_str}")
-                        logging.info(f"使用 CPU 編碼，FFmpeg 命令: {cpu_cmd_str}")
-                        
-                        process = subprocess.Popen(
-                            cpu_cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE,
-                            text=True, encoding='utf-8', errors='replace'
-                        )
-                        
-                        while True:
-                            output_line = process.stderr.readline()
-                            if output_line == '' and process.poll() is not None:
-                                break
-                            if output_line:
-                                logging.info(output_line.strip())
-                                if "frame=" in output_line or "speed=" in output_line:
-                                    self.progress_var.set("CPU 處理中: " + output_line.strip())
-                                    self.root.update_idletasks()
-                        
-                        cpu_return_code = process.poll()
-                        
-                        if cpu_return_code != 0:
-                            cpu_stderr = process.stderr.read() if process.stderr else ""
-                            error_message = f"CPU 處理失敗: {cpu_stderr}"
-                            self.log_to_gui(error_message, "ERROR")
-                            logging.error(error_message)
-                            error_detected = True
+                        continue
                     else:
-                        error_message = f"處理失敗: {stderr}"
-                        self.log_to_gui(error_message, "ERROR")
-                        logging.error(error_message)
-                        error_detected = True
-                    
-                    if error_detected:
-                        os.chdir(cwd)  # 恢復原始工作目錄
-                        self.cleanup_temp_files()
-                        raise Exception("處理過程中發生錯誤，請查看日誌以了解詳情")
-            
-            finally:
-                os.chdir(cwd)  # 確保恢復原始工作目錄
-            
-            # 將最終輸出檔案複製到使用者指定的位置
-            if os.path.exists(temp_output_path):
-                shutil.copy2(temp_output_path, self.output_path.get())
-                self.log_to_gui(f"已將處理後的影片複製到: {self.output_path.get()}")
-                
+                        # 其他錯誤，記錄並繼續嘗試下一個策略
+                        self.log_to_gui(f"{strategy['name']} 編碼失敗: {stderr[:200]}", "ERROR")
+                        logging.error(f"{strategy['name']} 編碼失敗: {stderr}")
+
+            # 如果所有策略都失敗，拋出異常
+            if not processing_success:
+                self.cleanup_temp_files()
+                raise Exception("所有編碼策略均失敗，請查看日誌以了解詳情")
+
+            # 複製輸出檔案到最終位置
+            if self._copy_output_file(temp_output_path, self.output_path.get()):
                 success_message = "影片處理成功完成！"
                 self.progress_var.set("處理完成！")
                 self.log_to_gui(success_message, "SUCCESS")
                 logging.info(success_message)
                 messagebox.showinfo("成功", success_message)
             else:
-                error_message = "處理完成但找不到輸出檔案"
-                self.progress_var.set(error_message)
-                self.log_to_gui(error_message, "ERROR")
-                logging.error(error_message)
-                messagebox.showerror("錯誤", error_message)
-            
+                self.cleanup_temp_files()
+                raise Exception("處理完成但無法複製輸出檔案")
+
             # 清理臨時檔案
             self.cleanup_temp_files()
-            
+
         except Exception as e:
             error_message = f"處理失敗: {str(e)}"
             self.progress_var.set(f"錯誤: {str(e)}")
             self.log_to_gui(error_message, "ERROR")
             logging.error(error_message)
             logging.exception("詳細錯誤堆疊資訊")
-            
-            # 清理臨時檔案
+
+            # 確保清理臨時檔案
             self.cleanup_temp_files()
-            
+
             result = messagebox.askquestion("錯誤", f"{error_message}\n\n是否要開啟詳細日誌檔案？")
             if result == 'yes':
                 self.open_log_file()
