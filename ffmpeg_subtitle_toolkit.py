@@ -7,8 +7,7 @@ import threading
 import re
 import logging
 import tempfile
-import shutil
-from shutil import which
+from shutil import which, copy2, rmtree
 from datetime import datetime
 
 __version__ = "0.1.0"
@@ -380,13 +379,13 @@ class FFmpegSubtitleGUI:
             # 複製影片檔案到臨時目錄，使用簡化後的檔案名稱
             video_ext = os.path.splitext(self.video_path.get())[1]
             temp_video_path = os.path.join(self.temp_dir, f"input{video_ext}")
-            shutil.copy2(self.video_path.get(), temp_video_path)
+            copy2(self.video_path.get(), temp_video_path)
             self.log_to_gui(f"複製影片到臨時目錄: {temp_video_path}")
             
             # 複製字幕檔案到臨時目錄
             subtitle_ext = os.path.splitext(self.subtitle_path.get())[1]
             temp_subtitle_path = os.path.join(self.temp_dir, f"subtitle{subtitle_ext}")
-            shutil.copy2(self.subtitle_path.get(), temp_subtitle_path)
+            copy2(self.subtitle_path.get(), temp_subtitle_path)
             self.log_to_gui(f"複製字幕到臨時目錄: {temp_subtitle_path}")
             
             # 設定臨時輸出路徑
@@ -397,14 +396,14 @@ class FFmpegSubtitleGUI:
         except Exception as e:
             self.log_to_gui(f"建立臨時檔案時發生錯誤: {str(e)}", "ERROR")
             if self.temp_dir and os.path.exists(self.temp_dir):
-                shutil.rmtree(self.temp_dir, ignore_errors=True)
+                rmtree(self.temp_dir, ignore_errors=True)
             raise
     
     def cleanup_temp_files(self):
         """清理臨時檔案和目錄"""
         if self.temp_dir and os.path.exists(self.temp_dir):
             try:
-                shutil.rmtree(self.temp_dir)
+                rmtree(self.temp_dir)
                 self.log_to_gui("臨時檔案已清理")
             except OSError as e:
                 self.log_to_gui(f"清理臨時檔案時發生錯誤: {e}", "WARNING")
@@ -562,7 +561,7 @@ class FFmpegSubtitleGUI:
             bool: 複製是否成功
         """
         if os.path.exists(temp_output_path):
-            shutil.copy2(temp_output_path, final_output_path)
+            copy2(temp_output_path, final_output_path)
             self.log_to_gui(f"已將處理後的影片複製到: {final_output_path}")
             return True
         else:
