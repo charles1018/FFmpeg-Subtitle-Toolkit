@@ -105,124 +105,142 @@ class FFmpegSubtitleGUI:
             messagebox.showerror("錯誤", error_msg)
             return False
     
-    def create_widgets(self):
-        """建立 GUI 的元件"""
-        main_frame = ttk.Frame(self.root, padding="10")
-        main_frame.pack(fill=tk.BOTH, expand=True)
-        
-        file_frame = ttk.LabelFrame(main_frame, text="檔案選擇", padding="10")
+    def _create_file_selection_frame(self, parent):
+        """創建檔案選擇區域"""
+        file_frame = ttk.LabelFrame(parent, text="檔案選擇", padding="10")
         file_frame.pack(fill=tk.X, padx=5, pady=5)
-        
+
         ttk.Label(file_frame, text="選擇影片:").grid(row=0, column=0, sticky=tk.W, pady=2)
         ttk.Entry(file_frame, textvariable=self.video_path, width=50).grid(row=0, column=1, pady=2, padx=5)
         ttk.Button(file_frame, text="瀏覽...", command=self.select_video).grid(row=0, column=2, pady=2)
-        
+
         ttk.Label(file_frame, text="選擇字幕:").grid(row=1, column=0, sticky=tk.W, pady=2)
         ttk.Entry(file_frame, textvariable=self.subtitle_path, width=50).grid(row=1, column=1, pady=2, padx=5)
         ttk.Button(file_frame, text="瀏覽...", command=self.select_subtitle).grid(row=1, column=2, pady=2)
-        
+
         ttk.Label(file_frame, text="輸出檔案:").grid(row=2, column=0, sticky=tk.W, pady=2)
         ttk.Entry(file_frame, textvariable=self.output_path, width=50).grid(row=2, column=1, pady=2, padx=5)
         ttk.Button(file_frame, text="瀏覽...", command=self.select_output).grid(row=2, column=2, pady=2)
-        
-        video_frame = ttk.LabelFrame(main_frame, text="影片參數", padding="10")
+
+    def _create_video_settings_frame(self, parent):
+        """創建影片設定區域"""
+        video_frame = ttk.LabelFrame(parent, text="影片參數", padding="10")
         video_frame.pack(fill=tk.X, padx=5, pady=5)
-        
+
         ttk.Label(video_frame, text="編碼格式:").grid(row=0, column=0, sticky=tk.W, pady=2)
         codec_menu = ttk.Combobox(video_frame, textvariable=self.codec_var, values=["H.264", "H.265"], state="readonly")
         codec_menu.grid(row=0, column=1, sticky=tk.W, pady=2)
-        
+
         ttk.Label(video_frame, text="編碼品質:").grid(row=1, column=0, sticky=tk.W, pady=2)
-        preset_menu = ttk.Combobox(video_frame, textvariable=self.preset_var, 
-                                  values=["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"], 
+        preset_menu = ttk.Combobox(video_frame, textvariable=self.preset_var,
+                                  values=["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"],
                                   state="readonly")
         preset_menu.grid(row=1, column=1, sticky=tk.W, pady=2)
         ttk.Label(video_frame, text="(越慢品質越好，但處理時間更長)").grid(row=1, column=2, sticky=tk.W, pady=2)
-        
-        subtitle_frame = ttk.LabelFrame(main_frame, text="字幕設定", padding="10")
+
+    def _create_subtitle_settings_frame(self, parent):
+        """創建字幕設定區域"""
+        subtitle_frame = ttk.LabelFrame(parent, text="字幕設定", padding="10")
         subtitle_frame.pack(fill=tk.X, padx=5, pady=5)
-        
+
         # 字幕字型設定
         ttk.Label(subtitle_frame, text="字幕字型:").grid(row=0, column=0, sticky=tk.W, pady=2)
-        font_menu = ttk.Combobox(subtitle_frame, textvariable=self.font_var, 
-                                values=["Arial", "微軟正黑體", "Noto Sans TC", "思源黑體", "Times New Roman"], 
+        font_menu = ttk.Combobox(subtitle_frame, textvariable=self.font_var,
+                                values=["Arial", "微軟正黑體", "Noto Sans TC", "思源黑體", "Times New Roman"],
                                 state="readonly")
         font_menu.grid(row=0, column=1, sticky=tk.W, pady=2)
-        
+
         # 字體大小調整滑桿
         ttk.Label(subtitle_frame, text="字體大小:").grid(row=1, column=0, sticky=tk.W, pady=2)
         size_frame = ttk.Frame(subtitle_frame)
         size_frame.grid(row=1, column=1, sticky=tk.W, pady=2)
-        ttk.Scale(size_frame, from_=10, to=72, orient=tk.HORIZONTAL, 
+        ttk.Scale(size_frame, from_=10, to=72, orient=tk.HORIZONTAL,
                  variable=self.font_size_var, length=200).pack(side=tk.LEFT)
         ttk.Label(size_frame, textvariable=self.font_size_var).pack(side=tk.LEFT, padx=5)
-        
+
         # 字體顏色選擇器
         ttk.Label(subtitle_frame, text="字體顏色:").grid(row=2, column=0, sticky=tk.W, pady=2)
         color_frame = ttk.Frame(subtitle_frame)
         color_frame.grid(row=2, column=1, sticky=tk.W, pady=2)
-        color_menu = ttk.Combobox(color_frame, textvariable=self.font_color_var, 
-                                 values=["&HFFFFFF", "&H000000", "&HFF0000", "&H00FF00", "&H0000FF"],  # 白、黑、紅、綠、藍
+        color_menu = ttk.Combobox(color_frame, textvariable=self.font_color_var,
+                                 values=["&HFFFFFF", "&H000000", "&HFF0000", "&H00FF00", "&H0000FF"],
                                  state="readonly")
         color_menu.pack(side=tk.LEFT)
         ttk.Button(color_frame, text="自定義", command=self.custom_color).pack(side=tk.LEFT, padx=5)
-        
+
         # 邊框樣式設定
         ttk.Label(subtitle_frame, text="邊框樣式:").grid(row=3, column=0, sticky=tk.W, pady=2)
-        border_menu = ttk.Combobox(subtitle_frame, textvariable=self.border_style_var, 
-                                  values=["無邊框", "普通邊框", "陰影", "半透明背景"], 
+        border_menu = ttk.Combobox(subtitle_frame, textvariable=self.border_style_var,
+                                  values=["無邊框", "普通邊框", "陰影", "半透明背景"],
                                   state="readonly")
         border_menu.grid(row=3, column=1, sticky=tk.W, pady=2)
-        
+
         # 精確調整字幕位置
         ttk.Label(subtitle_frame, text="字幕位置:").grid(row=4, column=0, sticky=tk.W, pady=2)
         position_frame = ttk.Frame(subtitle_frame)
         position_frame.grid(row=4, column=1, sticky=tk.W, pady=2)
-        
+
         ttk.Label(position_frame, text="X座標:").pack(side=tk.LEFT)
-        ttk.Scale(position_frame, from_=-200, to=200, orient=tk.HORIZONTAL, 
+        ttk.Scale(position_frame, from_=-200, to=200, orient=tk.HORIZONTAL,
                  variable=self.pos_x_var, length=100).pack(side=tk.LEFT, padx=5)
         ttk.Label(position_frame, textvariable=self.pos_x_var).pack(side=tk.LEFT, padx=5)
-        
+
         ttk.Label(position_frame, text="Y座標:").pack(side=tk.LEFT)
-        ttk.Scale(position_frame, from_=-200, to=200, orient=tk.HORIZONTAL, 
+        ttk.Scale(position_frame, from_=-200, to=200, orient=tk.HORIZONTAL,
                  variable=self.pos_y_var, length=100).pack(side=tk.LEFT, padx=5)
         ttk.Label(position_frame, textvariable=self.pos_y_var).pack(side=tk.LEFT, padx=5)
-        
+
         # 背景透明度設定
         ttk.Label(subtitle_frame, text="背景透明度:").grid(row=5, column=0, sticky=tk.W, pady=2)
-        transparency_menu = ttk.Combobox(subtitle_frame, textvariable=self.transparency_var, 
+        transparency_menu = ttk.Combobox(subtitle_frame, textvariable=self.transparency_var,
                                         values=["0", "50", "80", "100"], state="readonly")
         transparency_menu.grid(row=5, column=1, sticky=tk.W, pady=2)
         ttk.Label(subtitle_frame, text="0=完全透明, 100=不透明").grid(row=5, column=2, sticky=tk.W, pady=2)
-        
+
         # 字幕邊距設定
         ttk.Label(subtitle_frame, text="字幕邊距:").grid(row=6, column=0, sticky=tk.W, pady=2)
         margin_frame = ttk.Frame(subtitle_frame)
         margin_frame.grid(row=6, column=1, sticky=tk.W, pady=2)
-        ttk.Scale(margin_frame, from_=0, to=100, orient=tk.HORIZONTAL, 
+        ttk.Scale(margin_frame, from_=0, to=100, orient=tk.HORIZONTAL,
                  variable=self.margin_var, length=200).pack(side=tk.LEFT)
         ttk.Label(margin_frame, textvariable=self.margin_var).pack(side=tk.LEFT, padx=5)
-        
-        action_frame = ttk.Frame(main_frame, padding="10")
+
+    def _create_action_and_status_frames(self, parent):
+        """創建動作按鈕和狀態顯示區域"""
+        action_frame = ttk.Frame(parent, padding="10")
         action_frame.pack(fill=tk.X, padx=5, pady=10)
-        
-        status_frame = ttk.LabelFrame(main_frame, text="處理狀態", padding="10")
+
+        ttk.Button(action_frame, text="開始處理", command=self.start_processing, style="Accent.TButton").pack(pady=10)
+
+        status_frame = ttk.LabelFrame(parent, text="處理狀態", padding="10")
         status_frame.pack(fill=tk.X, padx=5, pady=5)
-        
+
         ttk.Label(status_frame, textvariable=self.progress_var).pack(fill=tk.X)
-        
-        log_frame = ttk.LabelFrame(main_frame, text="詳細日誌", padding="10")
+
+    def _create_log_frame(self, parent):
+        """創建日誌顯示區域"""
+        log_frame = ttk.LabelFrame(parent, text="詳細日誌", padding="10")
         log_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
+
         self.log_display = scrolledtext.ScrolledText(log_frame, height=8)
         self.log_display.pack(fill=tk.BOTH, expand=True)
         self.log_display.config(state=tk.DISABLED)
-        
+
         ttk.Button(log_frame, text="開啟日誌檔案", command=self.open_log_file).pack(pady=5)
-        
-        ttk.Button(action_frame, text="開始處理", command=self.start_processing, style="Accent.TButton").pack(pady=10)
-        
+
+    def create_widgets(self):
+        """建立 GUI 的所有元件"""
+        main_frame = ttk.Frame(self.root, padding="10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # 依序創建各個功能區域
+        self._create_file_selection_frame(main_frame)
+        self._create_video_settings_frame(main_frame)
+        self._create_subtitle_settings_frame(main_frame)
+        self._create_action_and_status_frames(main_frame)
+        self._create_log_frame(main_frame)
+
+        # 設定自訂樣式
         self.configure_styles()
     
     def configure_styles(self):
