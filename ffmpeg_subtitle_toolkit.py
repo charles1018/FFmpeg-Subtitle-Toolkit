@@ -406,7 +406,12 @@ class FFmpegSubtitleGUI:
             # 建立臨時目錄
             self.temp_dir = tempfile.mkdtemp(prefix="ffmpeg_gui_")
             self.log_to_gui(f"建立臨時目錄: {self.temp_dir}")
-            
+
+            # 設定目錄權限為僅當前用戶可訪問（Unix/Linux/macOS）
+            if os.name != 'nt':
+                os.chmod(self.temp_dir, 0o700)
+                self.log_to_gui("已設定臨時目錄權限為僅當前用戶可訪問")
+
             # 複製影片檔案到臨時目錄，使用簡化後的檔案名稱
             video_ext = os.path.splitext(self.video_path.get())[1]
             temp_video_path = os.path.join(self.temp_dir, f"input{video_ext}")
