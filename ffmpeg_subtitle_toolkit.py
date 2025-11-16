@@ -399,6 +399,45 @@ class FFmpegSubtitleGUI:
             ass_color = f"&H{b:02x}{g:02x}{r:02x}"
             self.font_color_var.set(ass_color)
             self.log_to_gui(f"自定義字體顏色: {ass_color}")
+
+    def _build_subtitle_style(self, font, font_size, font_color, back_color,
+                              border_style, pos_x, pos_y, margin_v):
+        """
+        構建 ASS/SSA 格式的字幕樣式字串
+
+        參數:
+            font: 字型名稱
+            font_size: 字體大小
+            font_color: 字體顏色（ASS 格式）
+            back_color: 背景顏色（ASS 格式，包含透明度）
+            border_style: 邊框樣式（0=無邊框, 1=普通邊框, 3=半透明背景, 4=陰影）
+            pos_x: X 座標偏移
+            pos_y: Y 座標偏移
+            margin_v: 垂直邊距
+
+        返回:
+            str: 組合後的樣式字串
+        """
+        # 計算調整後的邊距值，避免內聯三元運算式
+        margin_v_adjusted = margin_v + pos_y if pos_y >= 0 else margin_v
+        margin_l = max(0, pos_x)
+        margin_r = max(0, -pos_x)
+
+        # 使用字典組織樣式參數，提高可讀性
+        style_params = {
+            "Fontname": font,
+            "Fontsize": font_size,
+            "PrimaryColour": font_color,
+            "BackColour": back_color,
+            "BorderStyle": border_style,
+            "Outline": 1,
+            "MarginV": margin_v_adjusted,
+            "MarginL": margin_l,
+            "MarginR": margin_r,
+            "Alignment": 2
+        }
+
+        return ",".join(f"{k}={v}" for k, v in style_params.items())
     
     def process_video(self):
         """處理影片及燒錄字幕"""
@@ -440,13 +479,11 @@ class FFmpegSubtitleGUI:
             size_match = re.search(r'(\d{2,4})x(\d{2,4})', video_info)
             video_size = size_match.group(0) if size_match else "1920x1080"
             self.log_to_gui(f"檢測到影片尺寸: {video_size}")
-            
-            subtitle_style = (
-                f"Fontname={font},Fontsize={font_size},PrimaryColour={font_color},"
-                f"BackColour={back_color},BorderStyle={border_style},Outline=1,"
-                f"MarginV={margin_v + pos_y if pos_y >= 0 else margin_v},"
-                f"MarginL={pos_x if pos_x > 0 else 0},MarginR={-pos_x if pos_x < 0 else 0},"
-                f"Alignment=2"
+
+            # 構建字幕樣式字串
+            subtitle_style = self._build_subtitle_style(
+                font, font_size, font_color, back_color,
+                border_style, pos_x, pos_y, margin_v
             )
             
             # 建構 FFmpeg 命令，使用列表避免引號和轉義問題
