@@ -442,7 +442,8 @@ class FFmpegSubtitleGUI:
         返回:
             str: 組合後的樣式字串
         """
-        # 計算調整後的邊距值，避免內聯三元運算式
+        # 當 Y 座標向下偏移（pos_y >= 0）時，增加底部邊距以保持視覺位置
+        # 向上偏移時不調整邊距，保持原有的 margin_v 值
         margin_v_adjusted = margin_v + pos_y if pos_y >= 0 else margin_v
         margin_l = max(0, pos_x)
         margin_r = max(0, -pos_x)
