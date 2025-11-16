@@ -734,16 +734,20 @@ class FFmpegSubtitleGUI:
             self.cleanup_temp_files()
 
         except Exception as e:
-            error_message = f"處理失敗: {str(e)}"
-            self.progress_var.set(f"錯誤: {str(e)}")
-            self.log_to_gui(error_message, "ERROR")
-            logging.error(error_message)
+            # 完整的錯誤訊息僅記錄到日誌檔案
+            detailed_error = f"處理失敗: {str(e)}"
+            logging.error(detailed_error)
             logging.exception("詳細錯誤堆疊資訊")
+
+            # 對用戶顯示簡化的錯誤訊息，避免洩漏敏感資訊（如檔案路徑）
+            user_message = "處理影片時發生錯誤，詳細資訊請查看日誌檔案"
+            self.progress_var.set("處理失敗")
+            self.log_to_gui(user_message, "ERROR")
 
             # 確保清理臨時檔案
             self.cleanup_temp_files()
 
-            result = messagebox.askquestion("錯誤", f"{error_message}\n\n是否要開啟詳細日誌檔案？")
+            result = messagebox.askquestion("錯誤", f"{user_message}\n\n是否要開啟詳細日誌檔案？")
             if result == 'yes':
                 self.open_log_file()
 
