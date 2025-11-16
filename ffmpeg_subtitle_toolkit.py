@@ -7,6 +7,7 @@ import threading
 import re
 import logging
 import tempfile
+import time
 from shutil import which, copy2, rmtree
 from datetime import datetime
 
@@ -540,9 +541,18 @@ class FFmpegSubtitleGUI:
             cwd=cwd
         )
 
-        # 即時顯示 FFmpeg 的處理進度
+        # 即時顯示 FFmpeg 的處理進度，並添加超時保護
+        timeout = 3600  # 超時時間設定為 1 小時（3600 秒）
+        start_time = time.time()
         stderr_output = []
+
         while True:
+            # 檢查是否超時
+            if time.time() - start_time > timeout:
+                process.kill()
+                self.log_to_gui("FFmpeg 處理超時，已終止處理程序", "ERROR")
+                raise TimeoutError(f"FFmpeg 處理超過 {timeout} 秒，已自動終止")
+
             output_line = process.stderr.readline()
             if output_line == '' and process.poll() is not None:
                 break
