@@ -243,7 +243,12 @@ class FFmpegSubtitleGUI:
         self.configure_styles()
     
     def configure_styles(self):
-        """設定自訂的樣式"""
+        """
+        設定 GUI 的自訂視覺樣式
+
+        目前配置:
+            - Accent.TButton: 強調按鈕樣式（粗體 Arial 12pt）
+        """
         style = ttk.Style()
         style.configure("Accent.TButton", font=("Arial", 12, "bold"))
     
@@ -409,7 +414,11 @@ class FFmpegSubtitleGUI:
                 self.log_to_gui(f"清理臨時檔案時發生錯誤: {e}", "WARNING")
     
     def custom_color(self):
-        """開啟自定義字體顏色的選擇器"""
+        """
+        開啟顏色選擇器讓使用者自定義字幕顏色
+
+        將選擇的 RGB 顏色轉換為 ASS 格式（&HBBGGRR）並更新 font_color_var
+        """
         color = colorchooser.askcolor(title="選擇字體顏色")
         if color[1]:  # 如果有選擇顏色
             r, g, b = map(int, color[0])
