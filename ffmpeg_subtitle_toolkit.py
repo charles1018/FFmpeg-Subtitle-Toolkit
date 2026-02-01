@@ -4,6 +4,7 @@ import subprocess
 import os
 import sys
 import threading
+import queue
 import re
 import logging
 import tempfile
@@ -13,11 +14,19 @@ from datetime import datetime
 
 __version__ = "0.1.0"
 
+
 class FFmpegSubtitleGUI:
     """FFmpeg 字幕燒錄工具的主要 GUI 類別"""
 
     # 類級別常數
     BORDER_STYLE_MAP = {"無邊框": 0, "普通邊框": 1, "陰影": 4, "半透明背景": 3}
+    COLOR_MAP = {
+        "白色": "&HFFFFFF",
+        "黑色": "&H000000",
+        "藍色": "&HFF0000",
+        "綠色": "&H00FF00",
+        "紅色": "&H0000FF",
+    }
 
     # NVENC 錯誤檢測模式（使用正則表達式）
     NVENC_ERROR_PATTERNS = [
@@ -32,7 +41,7 @@ class FFmpegSubtitleGUI:
         self.root.title("FFmpeg 字幕燒錄工具")
         self.root.geometry("600x750")
         self.root.resizable(True, True)
-        
+
         # 初始化變數
         self.video_path = tk.StringVar()
         self.subtitle_path = tk.StringVar()
@@ -42,26 +51,45 @@ class FFmpegSubtitleGUI:
         self.font_var = tk.StringVar(value="Arial")
         self.transparency_var = tk.StringVar(value="80")  # 透明度百分比
         self.margin_var = tk.IntVar(value=30)
-        
+
         # 新增其他變數
         self.font_size_var = tk.IntVar(value=24)  # 字體大小預設為24
-        self.font_color_var = tk.StringVar(value="&HFFFFFF")  # 預設為白色 (ASS格式)
+        self.font_color_var = tk.StringVar(value="白色")  # 預設為白色
         self.border_style_var = tk.StringVar(value="半透明背景")  # 邊框樣式
         self.pos_x_var = tk.IntVar(value=0)  # X座標微調
         self.pos_y_var = tk.IntVar(value=0)  # Y座標微調
-        
+
         self.progress_var = tk.StringVar(value="準備就緒")
         self.temp_dir = None  # 用於儲存臨時檔案的目錄
-        
+        self._gui_queue = queue.Queue()  # 用於跨線程的 GUI 操作佇列
+
         # 初始化日誌系統
         self.setup_logging()
-        
-        # 檢查系統是否安裝 ffmpeg
-        self.check_ffmpeg()
-        
+
         # 建立使用者介面
         self.create_widgets()
-        
+
+        # 啟動 GUI 佇列輪詢（用於跨線程安全更新 GUI）
+        self._poll_gui_queue()
+
+        # 檢查系統是否安裝 ffmpeg（在 UI 建立後執行，以便控制按鈕狀態）
+        if not self.check_ffmpeg():
+            self.start_button.config(state=tk.DISABLED)
+
+    def _poll_gui_queue(self):
+        """輪詢 GUI 佇列，在主線程中執行排入的回呼函式"""
+        while not self._gui_queue.empty():
+            try:
+                callback = self._gui_queue.get_nowait()
+                callback()
+            except queue.Empty:
+                break
+        self.root.after(50, self._poll_gui_queue)
+
+    def _run_on_main_thread(self, callback):
+        """將回呼函式排入 GUI 佇列，確保在主線程中執行"""
+        self._gui_queue.put(callback)
+
     def setup_logging(self):
         """初始化日誌系統"""
         log_dir = os.path.join(os.path.expanduser("~"), "FFmpegGUI_Logs")
@@ -70,22 +98,21 @@ class FFmpegSubtitleGUI:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.log_file = os.path.join(log_dir, f"ffmpeg_gui_{timestamp}.log")
 
-        logging.basicConfig(
-            level=logging.DEBUG,
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            filename=self.log_file,
-            filemode='w'
-        )
+        self.logger = logging.getLogger("ffmpeg_subtitle_toolkit")
+        self.logger.setLevel(logging.DEBUG)
+        file_handler = logging.FileHandler(self.log_file, mode="w", encoding="utf-8")
+        file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+        self.logger.addHandler(file_handler)
 
-        logging.info("日誌系統初始化完成")
-    
+        self.logger.info("日誌系統初始化完成")
+
     def check_ffmpeg(self):
         """檢查系統中是否已安裝並可用 ffmpeg（不依賴系統 shell）"""
         try:
-            logging.info("檢查 ffmpeg 是否已安裝")
+            self.logger.info("檢查 ffmpeg 是否已安裝")
             if which("ffmpeg") is None:
                 error_msg = "無法找到系統中的 ffmpeg，請確認已安裝並設定環境變數"
-                logging.error(error_msg)
+                self.logger.error(error_msg)
                 messagebox.showerror("錯誤", error_msg)
                 return False
 
@@ -99,20 +126,20 @@ class FFmpegSubtitleGUI:
             )
             if result.returncode != 0:
                 error_msg = "ffmpeg 執行異常，請確認安裝是否正確"
-                logging.error(error_msg)
+                self.logger.error(error_msg)
                 messagebox.showerror("錯誤", error_msg)
                 return False
 
-            ffmpeg_version = (result.stdout or result.stderr).split('\n')[0]
-            logging.info(f"檢測到 ffmpeg: {ffmpeg_version}")
+            ffmpeg_version = (result.stdout or result.stderr).split("\n")[0]
+            self.logger.info(f"檢測到 ffmpeg: {ffmpeg_version}")
             return True
 
         except Exception as e:
             error_msg = f"檢查 ffmpeg 時發生錯誤: {str(e)}"
-            logging.error(error_msg)
+            self.logger.error(error_msg)
             messagebox.showerror("錯誤", error_msg)
             return False
-    
+
     def _create_file_selection_frame(self, parent):
         """創建檔案選擇區域"""
         file_frame = ttk.LabelFrame(parent, text="檔案選擇", padding="10")
@@ -140,9 +167,12 @@ class FFmpegSubtitleGUI:
         codec_menu.grid(row=0, column=1, sticky=tk.W, pady=2)
 
         ttk.Label(video_frame, text="編碼品質:").grid(row=1, column=0, sticky=tk.W, pady=2)
-        preset_menu = ttk.Combobox(video_frame, textvariable=self.preset_var,
-                                  values=["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"],
-                                  state="readonly")
+        preset_menu = ttk.Combobox(
+            video_frame,
+            textvariable=self.preset_var,
+            values=["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"],
+            state="readonly",
+        )
         preset_menu.grid(row=1, column=1, sticky=tk.W, pady=2)
         ttk.Label(video_frame, text="(越慢品質越好，但處理時間更長)").grid(row=1, column=2, sticky=tk.W, pady=2)
 
@@ -153,34 +183,41 @@ class FFmpegSubtitleGUI:
 
         # 字幕字型設定
         ttk.Label(subtitle_frame, text="字幕字型:").grid(row=0, column=0, sticky=tk.W, pady=2)
-        font_menu = ttk.Combobox(subtitle_frame, textvariable=self.font_var,
-                                values=["Arial", "微軟正黑體", "Noto Sans TC", "思源黑體", "Times New Roman"],
-                                state="readonly")
+        font_menu = ttk.Combobox(
+            subtitle_frame,
+            textvariable=self.font_var,
+            values=["Arial", "微軟正黑體", "Noto Sans TC", "思源黑體", "Times New Roman"],
+            state="readonly",
+        )
         font_menu.grid(row=0, column=1, sticky=tk.W, pady=2)
 
         # 字體大小調整滑桿
         ttk.Label(subtitle_frame, text="字體大小:").grid(row=1, column=0, sticky=tk.W, pady=2)
         size_frame = ttk.Frame(subtitle_frame)
         size_frame.grid(row=1, column=1, sticky=tk.W, pady=2)
-        ttk.Scale(size_frame, from_=10, to=72, orient=tk.HORIZONTAL,
-                 variable=self.font_size_var, length=200).pack(side=tk.LEFT)
+        ttk.Scale(size_frame, from_=10, to=72, orient=tk.HORIZONTAL, variable=self.font_size_var, length=200).pack(
+            side=tk.LEFT
+        )
         ttk.Label(size_frame, textvariable=self.font_size_var).pack(side=tk.LEFT, padx=5)
 
         # 字體顏色選擇器
         ttk.Label(subtitle_frame, text="字體顏色:").grid(row=2, column=0, sticky=tk.W, pady=2)
         color_frame = ttk.Frame(subtitle_frame)
         color_frame.grid(row=2, column=1, sticky=tk.W, pady=2)
-        color_menu = ttk.Combobox(color_frame, textvariable=self.font_color_var,
-                                 values=["&HFFFFFF", "&H000000", "&HFF0000", "&H00FF00", "&H0000FF"],
-                                 state="readonly")
+        color_menu = ttk.Combobox(
+            color_frame, textvariable=self.font_color_var, values=list(self.COLOR_MAP.keys()), state="readonly"
+        )
         color_menu.pack(side=tk.LEFT)
         ttk.Button(color_frame, text="自定義", command=self.custom_color).pack(side=tk.LEFT, padx=5)
 
         # 邊框樣式設定
         ttk.Label(subtitle_frame, text="邊框樣式:").grid(row=3, column=0, sticky=tk.W, pady=2)
-        border_menu = ttk.Combobox(subtitle_frame, textvariable=self.border_style_var,
-                                  values=["無邊框", "普通邊框", "陰影", "半透明背景"],
-                                  state="readonly")
+        border_menu = ttk.Combobox(
+            subtitle_frame,
+            textvariable=self.border_style_var,
+            values=["無邊框", "普通邊框", "陰影", "半透明背景"],
+            state="readonly",
+        )
         border_menu.grid(row=3, column=1, sticky=tk.W, pady=2)
 
         # 精確調整字幕位置
@@ -189,28 +226,32 @@ class FFmpegSubtitleGUI:
         position_frame.grid(row=4, column=1, sticky=tk.W, pady=2)
 
         ttk.Label(position_frame, text="X座標:").pack(side=tk.LEFT)
-        ttk.Scale(position_frame, from_=-200, to=200, orient=tk.HORIZONTAL,
-                 variable=self.pos_x_var, length=100).pack(side=tk.LEFT, padx=5)
+        ttk.Scale(position_frame, from_=-200, to=200, orient=tk.HORIZONTAL, variable=self.pos_x_var, length=100).pack(
+            side=tk.LEFT, padx=5
+        )
         ttk.Label(position_frame, textvariable=self.pos_x_var).pack(side=tk.LEFT, padx=5)
 
         ttk.Label(position_frame, text="Y座標:").pack(side=tk.LEFT)
-        ttk.Scale(position_frame, from_=-200, to=200, orient=tk.HORIZONTAL,
-                 variable=self.pos_y_var, length=100).pack(side=tk.LEFT, padx=5)
+        ttk.Scale(position_frame, from_=-200, to=200, orient=tk.HORIZONTAL, variable=self.pos_y_var, length=100).pack(
+            side=tk.LEFT, padx=5
+        )
         ttk.Label(position_frame, textvariable=self.pos_y_var).pack(side=tk.LEFT, padx=5)
 
         # 背景透明度設定
         ttk.Label(subtitle_frame, text="背景透明度:").grid(row=5, column=0, sticky=tk.W, pady=2)
-        transparency_menu = ttk.Combobox(subtitle_frame, textvariable=self.transparency_var,
-                                        values=["0", "50", "80", "100"], state="readonly")
+        transparency_menu = ttk.Combobox(
+            subtitle_frame, textvariable=self.transparency_var, values=["0", "50", "80", "100"], state="readonly"
+        )
         transparency_menu.grid(row=5, column=1, sticky=tk.W, pady=2)
-        ttk.Label(subtitle_frame, text="0=完全透明, 100=不透明").grid(row=5, column=2, sticky=tk.W, pady=2)
+        ttk.Label(subtitle_frame, text="0=不透明, 100=完全透明").grid(row=5, column=2, sticky=tk.W, pady=2)
 
         # 字幕邊距設定
         ttk.Label(subtitle_frame, text="字幕邊距:").grid(row=6, column=0, sticky=tk.W, pady=2)
         margin_frame = ttk.Frame(subtitle_frame)
         margin_frame.grid(row=6, column=1, sticky=tk.W, pady=2)
-        ttk.Scale(margin_frame, from_=0, to=100, orient=tk.HORIZONTAL,
-                 variable=self.margin_var, length=200).pack(side=tk.LEFT)
+        ttk.Scale(margin_frame, from_=0, to=100, orient=tk.HORIZONTAL, variable=self.margin_var, length=200).pack(
+            side=tk.LEFT
+        )
         ttk.Label(margin_frame, textvariable=self.margin_var).pack(side=tk.LEFT, padx=5)
 
     def _create_action_and_status_frames(self, parent):
@@ -218,7 +259,10 @@ class FFmpegSubtitleGUI:
         action_frame = ttk.Frame(parent, padding="10")
         action_frame.pack(fill=tk.X, padx=5, pady=10)
 
-        ttk.Button(action_frame, text="開始處理", command=self.start_processing, style="Accent.TButton").pack(pady=10)
+        self.start_button = ttk.Button(
+            action_frame, text="開始處理", command=self.start_processing, style="Accent.TButton"
+        )
+        self.start_button.pack(pady=10)
 
         status_frame = ttk.LabelFrame(parent, text="處理狀態", padding="10")
         status_frame.pack(fill=tk.X, padx=5, pady=5)
@@ -250,7 +294,7 @@ class FFmpegSubtitleGUI:
 
         # 設定自訂樣式
         self.configure_styles()
-    
+
     def configure_styles(self):
         """
         設定 GUI 的自訂視覺樣式
@@ -260,10 +304,10 @@ class FFmpegSubtitleGUI:
         """
         style = ttk.Style()
         style.configure("Accent.TButton", font=("Arial", 12, "bold"))
-    
+
     def open_log_file(self):
         """開啟日誌檔案（包含路徑安全驗證）"""
-        if not hasattr(self, 'log_file'):
+        if not hasattr(self, "log_file"):
             messagebox.showinfo("提示", "日誌檔案尚未建立")
             return
 
@@ -279,58 +323,61 @@ class FFmpegSubtitleGUI:
             log_dir = os.path.join(os.path.expanduser("~"), "FFmpegGUI_Logs")
             expected_log_dir = os.path.abspath(log_dir)
 
-            if not log_file_path.startswith(expected_log_dir):
+            if not os.path.normcase(log_file_path).startswith(os.path.normcase(expected_log_dir)):
                 messagebox.showerror("錯誤", "日誌檔案路徑異常，無法開啟")
-                logging.warning(f"嘗試開啟異常路徑的日誌檔案: {log_file_path}")
+                self.logger.warning(f"嘗試開啟異常路徑的日誌檔案: {log_file_path}")
                 return
 
             # 開啟日誌檔案
-            if os.name == 'nt':  # Windows
+            if os.name == "nt":  # Windows
                 os.startfile(log_file_path)
-            elif sys.platform == 'darwin':  # macOS
-                subprocess.run(['open', log_file_path], check=False)
+            elif sys.platform == "darwin":  # macOS
+                subprocess.run(["open", log_file_path], check=False)
             else:  # Linux/其他 POSIX
-                subprocess.run(['xdg-open', log_file_path], check=False)
+                subprocess.run(["xdg-open", log_file_path], check=False)
 
         except Exception as e:
             messagebox.showerror("錯誤", f"無法開啟日誌檔案: {str(e)}")
-    
+
     def log_to_gui(self, message, level="INFO"):
-        """將訊息記錄到 GUI 和日誌檔案"""
+        """將訊息記錄到 GUI 和日誌檔案（線程安全）"""
         if level == "ERROR":
-            logging.error(message)
+            self.logger.error(message)
         elif level == "WARNING":
-            logging.warning(message)
+            self.logger.warning(message)
         else:
-            logging.info(message)
-        
-        self.log_display.config(state=tk.NORMAL)
-        
-        tag = None
-        if level == "ERROR":
-            tag = "error"
-            self.log_display.tag_config("error", foreground="red")
-        elif level == "WARNING":
-            tag = "warning"
-            self.log_display.tag_config("warning", foreground="orange")
-        elif level == "SUCCESS":
-            tag = "success"
-            self.log_display.tag_config("success", foreground="green")
-        
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        log_entry = f"[{timestamp}] {message}\n"
-        
-        self.log_display.insert(tk.END, log_entry, tag)
-        self.log_display.see(tk.END)
-        self.log_display.config(state=tk.DISABLED)
-        
-        self.root.update_idletasks()
-    
+            self.logger.info(message)
+
+        def _update():
+            self.log_display.config(state=tk.NORMAL)
+
+            tag = None
+            if level == "ERROR":
+                tag = "error"
+                self.log_display.tag_config("error", foreground="red")
+            elif level == "WARNING":
+                tag = "warning"
+                self.log_display.tag_config("warning", foreground="orange")
+            elif level == "SUCCESS":
+                tag = "success"
+                self.log_display.tag_config("success", foreground="green")
+
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            log_entry = f"[{timestamp}] {message}\n"
+
+            self.log_display.insert(tk.END, log_entry, tag)
+            self.log_display.see(tk.END)
+            self.log_display.config(state=tk.DISABLED)
+
+        if threading.current_thread() is threading.main_thread():
+            _update()
+        else:
+            self._run_on_main_thread(_update)
+
     def select_video(self):
         """選擇影片檔案"""
         filepath = filedialog.askopenfilename(
-            title="選擇影片檔案",
-            filetypes=[("影片檔案", "*.mp4 *.avi *.mkv *.mov *.wmv"), ("所有檔案", "*.*")]
+            title="選擇影片檔案", filetypes=[("影片檔案", "*.mp4 *.avi *.mkv *.mov *.wmv"), ("所有檔案", "*.*")]
         )
         if filepath:
             self.video_path.set(filepath)
@@ -341,65 +388,63 @@ class FFmpegSubtitleGUI:
                 output_name = f"{base_path}_output.mp4"
                 self.output_path.set(output_name)
                 self.log_to_gui(f"自動設定輸出路徑: {output_name}")
-    
+
     def select_subtitle(self):
         """選擇字幕檔案"""
         filepath = filedialog.askopenfilename(
-            title="選擇字幕檔案",
-            filetypes=[("字幕檔案", "*.srt *.ass *.ssa"), ("所有檔案", "*.*")]
+            title="選擇字幕檔案", filetypes=[("字幕檔案", "*.srt *.ass *.ssa"), ("所有檔案", "*.*")]
         )
         if filepath:
             self.subtitle_path.set(filepath)
             self.log_to_gui(f"已選擇字幕: {filepath}")
-    
+
     def select_output(self):
         """選擇輸出檔案的儲存位置"""
         filepath = filedialog.asksaveasfilename(
-            title="設定輸出檔案",
-            defaultextension=".mp4",
-            filetypes=[("MP4 檔案", "*.mp4"), ("所有檔案", "*.*")]
+            title="設定輸出檔案", defaultextension=".mp4", filetypes=[("MP4 檔案", "*.mp4"), ("所有檔案", "*.*")]
         )
         if filepath:
             self.output_path.set(filepath)
             self.log_to_gui(f"已設定輸出路徑: {filepath}")
-    
+
     def validate_inputs(self):
         """驗證輸入的資料是否有效"""
         if not self.video_path.get():
             self.log_to_gui("請選擇影片檔案", "ERROR")
             messagebox.showerror("錯誤", "請選擇影片檔案")
             return False
-        
+
         if not self.subtitle_path.get():
             self.log_to_gui("請選擇字幕檔案", "ERROR")
             messagebox.showerror("錯誤", "請選擇字幕檔案")
             return False
-        
+
         if not self.output_path.get():
             self.log_to_gui("請設定輸出檔案位置", "ERROR")
             messagebox.showerror("錯誤", "請設定輸出檔案位置")
             return False
-        
+
         if not os.path.exists(self.video_path.get()):
             self.log_to_gui("影片檔案不存在", "ERROR")
             messagebox.showerror("錯誤", "影片檔案不存在")
             return False
-        
+
         if not os.path.exists(self.subtitle_path.get()):
             self.log_to_gui("字幕檔案不存在", "ERROR")
             messagebox.showerror("錯誤", "字幕檔案不存在")
             return False
-        
+
         self.log_to_gui("輸入驗證通過")
         return True
-    
+
     def start_processing(self):
         """開始處理影片檔案"""
         if not self.validate_inputs():
             return
-        
+
+        self.start_button.config(state=tk.DISABLED)
         threading.Thread(target=self.process_video, daemon=True).start()
-    
+
     def create_temp_files(self):
         """建立臨時檔案和目錄，避免路徑中的特殊字元問題"""
         try:
@@ -408,7 +453,7 @@ class FFmpegSubtitleGUI:
             self.log_to_gui(f"建立臨時目錄: {self.temp_dir}")
 
             # 設定目錄權限為僅當前用戶可訪問（Unix/Linux/macOS）
-            if os.name != 'nt':
+            if os.name != "nt":
                 os.chmod(self.temp_dir, 0o700)
                 self.log_to_gui("已設定臨時目錄權限為僅當前用戶可訪問")
 
@@ -417,24 +462,24 @@ class FFmpegSubtitleGUI:
             temp_video_path = os.path.join(self.temp_dir, f"input{video_ext}")
             copy2(self.video_path.get(), temp_video_path)
             self.log_to_gui(f"複製影片到臨時目錄: {temp_video_path}")
-            
+
             # 複製字幕檔案到臨時目錄
             subtitle_ext = os.path.splitext(self.subtitle_path.get())[1]
             temp_subtitle_path = os.path.join(self.temp_dir, f"subtitle{subtitle_ext}")
             copy2(self.subtitle_path.get(), temp_subtitle_path)
             self.log_to_gui(f"複製字幕到臨時目錄: {temp_subtitle_path}")
-            
+
             # 設定臨時輸出路徑
             temp_output_path = os.path.join(self.temp_dir, "output.mp4")
-            
+
             return temp_video_path, temp_subtitle_path, temp_output_path
-            
+
         except Exception as e:
             self.log_to_gui(f"建立臨時檔案時發生錯誤: {str(e)}", "ERROR")
             if self.temp_dir and os.path.exists(self.temp_dir):
                 rmtree(self.temp_dir, ignore_errors=True)
             raise
-    
+
     def cleanup_temp_files(self):
         """清理臨時檔案和目錄"""
         if self.temp_dir and os.path.exists(self.temp_dir):
@@ -443,7 +488,7 @@ class FFmpegSubtitleGUI:
                 self.log_to_gui("臨時檔案已清理")
             except OSError as e:
                 self.log_to_gui(f"清理臨時檔案時發生錯誤: {e}", "WARNING")
-    
+
     def custom_color(self):
         """
         開啟顏色選擇器讓使用者自定義字幕顏色
@@ -457,8 +502,7 @@ class FFmpegSubtitleGUI:
             self.font_color_var.set(ass_color)
             self.log_to_gui(f"自定義字體顏色: {ass_color}")
 
-    def _build_subtitle_style(self, font, font_size, font_color, back_color,
-                              border_style, pos_x, pos_y, margin_v):
+    def _build_subtitle_style(self, font, font_size, font_color, back_color, border_style, pos_x, pos_y, margin_v):
         """
         構建 ASS/SSA 格式的字幕樣式字串
 
@@ -492,7 +536,7 @@ class FFmpegSubtitleGUI:
             "MarginV": margin_v_adjusted,
             "MarginL": margin_l,
             "MarginR": margin_r,
-            "Alignment": 2
+            "Alignment": 2,
         }
 
         return ",".join(f"{k}={v}" for k, v in style_params.items())
@@ -509,18 +553,36 @@ class FFmpegSubtitleGUI:
         """
         video_info_cmd = ["ffmpeg", "-i", video_path, "-hide_banner"]
         video_info_process = subprocess.Popen(
-            video_info_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, encoding='utf-8', errors='replace'
+            video_info_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
         )
-        _, video_info = video_info_process.communicate()
+        try:
+            _, video_info = video_info_process.communicate(timeout=30)
+        except subprocess.TimeoutExpired:
+            video_info_process.kill()
+            video_info_process.wait()
+            self.log_to_gui("影片尺寸偵測超時，使用預設值 1920x1080", "WARNING")
+            return "1920x1080"
 
-        size_match = re.search(r'(\d{2,4})x(\d{2,4})', video_info)
-        video_size = size_match.group(0) if size_match else "1920x1080"
+        # 僅在包含 Video: 的行中搜尋解析度，避免誤匹配版本號等字串
+        video_size = "1920x1080"
+        for line in video_info.splitlines():
+            if "Video:" in line:
+                size_match = re.search(r"(\d{2,5})x(\d{2,5})", line)
+                if size_match:
+                    video_size = size_match.group(0)
+                    break
+
         self.log_to_gui(f"檢測到影片尺寸: {video_size}")
         return video_size
 
-    def _build_ffmpeg_command(self, video_path, subtitle_filename, output_path,
-                              codec, preset, subtitle_style, video_size, extra_args):
+    def _build_ffmpeg_command(
+        self, video_path, subtitle_filename, output_path, codec, preset, subtitle_style, video_size, extra_args
+    ):
         """
         構建 FFmpeg 命令列表
 
@@ -537,14 +599,23 @@ class FFmpegSubtitleGUI:
         返回:
             list: FFmpeg 命令列表
         """
-        ffmpeg_cmd = ["ffmpeg", "-y"] + extra_args + [
-            "-i", video_path,
-            "-c:v", codec,
-            "-preset", preset,
-            "-c:a", "copy",
-            "-vf", f"subtitles='{subtitle_filename}':force_style='{subtitle_style}':original_size={video_size}",
-            output_path
-        ]
+        ffmpeg_cmd = (
+            ["ffmpeg", "-y"]
+            + extra_args
+            + [
+                "-i",
+                video_path,
+                "-c:v",
+                codec,
+                "-preset",
+                preset,
+                "-c:a",
+                "copy",
+                "-vf",
+                f"subtitles='{subtitle_filename}':force_style='{subtitle_style}':original_size={video_size}",
+                output_path,
+            ]
+        )
         return ffmpeg_cmd
 
     def _execute_ffmpeg(self, ffmpeg_cmd, label, cwd):
@@ -561,16 +632,16 @@ class FFmpegSubtitleGUI:
         """
         cmd_str = " ".join(ffmpeg_cmd)
         self.log_to_gui(f"執行命令: {cmd_str}")
-        logging.info(f"FFmpeg 命令: {cmd_str}")
+        self.logger.info(f"FFmpeg 命令: {cmd_str}")
 
         process = subprocess.Popen(
             ffmpeg_cmd,
             stderr=subprocess.PIPE,
             stdout=subprocess.PIPE,
             text=True,
-            encoding='utf-8',
-            errors='replace',
-            cwd=cwd
+            encoding="utf-8",
+            errors="replace",
+            cwd=cwd,
         )
 
         # 即時顯示 FFmpeg 的處理進度，並添加超時保護
@@ -578,25 +649,30 @@ class FFmpegSubtitleGUI:
         start_time = time.time()
         stderr_output = []
 
-        while True:
-            # 檢查是否超時
-            if time.time() - start_time > timeout:
-                process.kill()
-                self.log_to_gui("FFmpeg 處理超時，已終止處理程序", "ERROR")
-                raise TimeoutError(f"FFmpeg 處理超過 {timeout} 秒，已自動終止")
+        try:
+            while True:
+                # 檢查是否超時
+                if time.time() - start_time > timeout:
+                    process.kill()
+                    self.log_to_gui("FFmpeg 處理超時，已終止處理程序", "ERROR")
+                    raise TimeoutError(f"FFmpeg 處理超過 {timeout} 秒，已自動終止")
 
-            output_line = process.stderr.readline()
-            if output_line == '' and process.poll() is not None:
-                break
-            if output_line:
-                stderr_output.append(output_line)
-                logging.info(output_line.strip())
-                if "frame=" in output_line or "speed=" in output_line:
-                    self.progress_var.set(f"{label}: " + output_line.strip())
-                    self.root.update_idletasks()
+                output_line = process.stderr.readline()
+                if output_line == "" and process.poll() is not None:
+                    break
+                if output_line:
+                    stderr_output.append(output_line)
+                    self.logger.info(output_line.strip())
+                    if "frame=" in output_line or "speed=" in output_line:
+                        progress_text = f"{label}: " + output_line.strip()
+                        self._run_on_main_thread(lambda t=progress_text: self.progress_var.set(t))
+        except Exception:
+            process.kill()
+            process.wait()
+            raise
 
         return_code = process.poll()
-        stderr = ''.join(stderr_output)
+        stderr = "".join(stderr_output)
         return return_code, stderr
 
     def _is_nvenc_error(self, stderr):
@@ -633,9 +709,8 @@ class FFmpegSubtitleGUI:
     def process_video(self):
         """處理影片及燒錄字幕（使用編碼策略模式，支援 GPU/CPU 自動回退）"""
         try:
-            self.progress_var.set("處理中...")
+            self._run_on_main_thread(lambda: self.progress_var.set("處理中..."))
             self.log_to_gui("開始處理影片", "INFO")
-            self.root.update_idletasks()
 
             # 準備臨時檔案和配置參數
             temp_video_path, temp_subtitle_path, temp_output_path = self.create_temp_files()
@@ -648,7 +723,8 @@ class FFmpegSubtitleGUI:
             # 收集字幕樣式參數
             font = self.font_var.get()
             font_size = self.font_size_var.get()
-            font_color = self.font_color_var.get()
+            font_color_name = self.font_color_var.get()
+            font_color = self.COLOR_MAP.get(font_color_name, font_color_name)
             border_style = self.BORDER_STYLE_MAP[self.border_style_var.get()]
             pos_x = self.pos_x_var.get()
             pos_y = self.pos_y_var.get()
@@ -657,7 +733,9 @@ class FFmpegSubtitleGUI:
 
             self.log_to_gui(f"編碼器: {self.codec_var.get()}, 品質: {preset}")
             self.log_to_gui(f"字型: {font}, 大小: {font_size}, 顏色: {font_color}")
-            self.log_to_gui(f"邊框: {self.border_style_var.get()}, 位置: ({pos_x}, {pos_y}), 邊距: {margin_v}, 透明度: {transparency}%")
+            self.log_to_gui(
+                f"邊框: {self.border_style_var.get()}, 位置: ({pos_x}, {pos_y}), 邊距: {margin_v}, 透明度: {transparency}%"
+            )
 
             # 計算背景顏色（包含透明度）
             alpha = int((100 - transparency) * 255 / 100)
@@ -668,8 +746,7 @@ class FFmpegSubtitleGUI:
 
             # 構建字幕樣式
             subtitle_style = self._build_subtitle_style(
-                font, font_size, font_color, back_color,
-                border_style, pos_x, pos_y, margin_v
+                font, font_size, font_color, back_color, border_style, pos_x, pos_y, margin_v
             )
 
             subtitle_filename = os.path.basename(temp_subtitle_path)
@@ -677,7 +754,7 @@ class FFmpegSubtitleGUI:
             # 定義編碼策略：GPU 優先，CPU 作為回退
             encoding_strategies = [
                 {"name": "GPU", "codec": gpu_codec, "extra_args": ["-hwaccel", "cuda"]},
-                {"name": "CPU", "codec": cpu_codec, "extra_args": []}
+                {"name": "CPU", "codec": cpu_codec, "extra_args": []},
             ]
 
             # 嘗試各種編碼策略，直到成功
@@ -687,17 +764,18 @@ class FFmpegSubtitleGUI:
 
                 # 構建 FFmpeg 命令
                 ffmpeg_cmd = self._build_ffmpeg_command(
-                    temp_video_path, subtitle_filename, temp_output_path,
-                    strategy['codec'], preset, subtitle_style, video_size,
-                    strategy['extra_args']
+                    temp_video_path,
+                    subtitle_filename,
+                    temp_output_path,
+                    strategy["codec"],
+                    preset,
+                    subtitle_style,
+                    video_size,
+                    strategy["extra_args"],
                 )
 
                 # 執行 FFmpeg（使用 cwd 參數指定工作目錄，避免 os.chdir()）
-                return_code, stderr = self._execute_ffmpeg(
-                    ffmpeg_cmd,
-                    f"{strategy['name']} 處理中",
-                    self.temp_dir
-                )
+                return_code, stderr = self._execute_ffmpeg(ffmpeg_cmd, f"{strategy['name']} 處理中", self.temp_dir)
 
                 # 檢查執行結果
                 if return_code == 0:
@@ -706,13 +784,13 @@ class FFmpegSubtitleGUI:
                     break
                 else:
                     # 檢查是否為 NVENC 錯誤（僅在 GPU 策略時）
-                    if strategy['name'] == "GPU" and self._is_nvenc_error(stderr):
+                    if strategy["name"] == "GPU" and self._is_nvenc_error(stderr):
                         self.log_to_gui("NVENC 不可用，切換至 CPU 編碼...", "WARNING")
                         continue
                     else:
                         # 其他錯誤，記錄並繼續嘗試下一個策略
                         self.log_to_gui(f"{strategy['name']} 編碼失敗: {stderr[:200]}", "ERROR")
-                        logging.error(f"{strategy['name']} 編碼失敗: {stderr}")
+                        self.logger.error(f"{strategy['name']} 編碼失敗: {stderr}")
 
             # 如果所有策略都失敗，拋出異常
             if not processing_success:
@@ -722,10 +800,10 @@ class FFmpegSubtitleGUI:
             # 複製輸出檔案到最終位置
             if self._copy_output_file(temp_output_path, self.output_path.get()):
                 success_message = "影片處理成功完成！"
-                self.progress_var.set("處理完成！")
+                self._run_on_main_thread(lambda: self.progress_var.set("處理完成！"))
                 self.log_to_gui(success_message, "SUCCESS")
-                logging.info(success_message)
-                messagebox.showinfo("成功", success_message)
+                self.logger.info(success_message)
+                self._run_on_main_thread(lambda: messagebox.showinfo("成功", success_message))
             else:
                 self.cleanup_temp_files()
                 raise Exception("處理完成但無法複製輸出檔案")
@@ -736,20 +814,27 @@ class FFmpegSubtitleGUI:
         except Exception as e:
             # 完整的錯誤訊息僅記錄到日誌檔案
             detailed_error = f"處理失敗: {str(e)}"
-            logging.error(detailed_error)
-            logging.exception("詳細錯誤堆疊資訊")
+            self.logger.error(detailed_error)
+            self.logger.exception("詳細錯誤堆疊資訊")
 
             # 對用戶顯示簡化的錯誤訊息，避免洩漏敏感資訊（如檔案路徑）
             user_message = "處理影片時發生錯誤，詳細資訊請查看日誌檔案"
-            self.progress_var.set("處理失敗")
+            self._run_on_main_thread(lambda: self.progress_var.set("處理失敗"))
             self.log_to_gui(user_message, "ERROR")
 
             # 確保清理臨時檔案
             self.cleanup_temp_files()
 
-            result = messagebox.askquestion("錯誤", f"{user_message}\n\n是否要開啟詳細日誌檔案？")
-            if result == 'yes':
-                self.open_log_file()
+            def _show_error_dialog():
+                result = messagebox.askquestion("錯誤", f"{user_message}\n\n是否要開啟詳細日誌檔案？")
+                if result == "yes":
+                    self.open_log_file()
+
+            self._run_on_main_thread(_show_error_dialog)
+
+        finally:
+            self._run_on_main_thread(lambda: self.start_button.config(state=tk.NORMAL))
+
 
 def main() -> int:
     """啟動 GUI 應用程式。"""
