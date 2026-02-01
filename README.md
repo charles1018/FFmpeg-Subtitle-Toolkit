@@ -8,7 +8,7 @@ FFmpeg字幕工具箱是一個使用Python和Tkinter開發的GUI應用程式，�
 - 支援各種影片格式（MP4, AVI, MKV, MOV等）
 - 支援主流字幕格式（SRT, ASS, SSA）
 - 豐富的字幕樣式自訂：
-  - 字幕字型選擇（內建多種中文字型）
+  - 字幕字型選擇（支援系統已安裝的中文字型）
   - 字體大小調整（10-72）
   - 字體顏色自訂（預設色或自選）
   - 邊框樣式（無邊框、普通邊框、陰影、半透明背景）
@@ -109,7 +109,7 @@ uv run python ffmpeg_subtitle_toolkit.py
      - 編碼格式（H.264 或 H.265）
      - 編碼品質（從 ultrafast 到 veryslow）
    - **字幕樣式**：
-     - 字幕字型（Arial、微軟正黑體、Noto Sans TC、思源黑體、Times New Roman）
+     - 字幕字型（Arial、微軟正黑體、Noto Sans TC、思源黑體、Times New Roman，需系統已安裝對應字型）
      - 字體大小（10-72）
      - 字體顏色（預設色或自定義）
      - 邊框樣式（無邊框、普通邊框、陰影、半透明背景）
