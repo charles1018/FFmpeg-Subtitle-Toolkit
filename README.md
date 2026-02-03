@@ -1,10 +1,10 @@
 # FFmpeg字幕工具箱 (FFmpeg Subtitle Toolkit)
 
-FFmpeg字幕工具箱是一個使用Python和Tkinter開發的GUI應用程式，專門用於將SRT等格式的字幕檔案燒錄（硬字幕）到影片檔案中。該工具基於FFmpeg，提供了友善的使用者介面，讓您輕鬆自訂字幕樣式並處理影片。
+FFmpeg字幕工具箱是一個使用Python和Gradio開發的網頁應用程式，專門用於將SRT等格式的字幕檔案燒錄（硬字幕）到影片檔案中。該工具基於FFmpeg，提供了友善的網頁介面，讓您輕鬆自訂字幕樣式並處理影片。
 
 ## 功能特色
 
-- 簡單直觀的圖形使用者介面
+- 簡單直觀的網頁使用者介面（自動開啟瀏覽器）
 - 支援各種影片格式（MP4, AVI, MKV, MOV等）
 - 支援主流字幕格式（SRT, ASS, SSA）
 - 豐富的字幕樣式自訂：
@@ -23,6 +23,7 @@ FFmpeg字幕工具箱是一個使用Python和Tkinter開發的GUI應用程式，�
 
 - Python 3.10 或更高版本（推薦使用 uv 管理）
 - FFmpeg（需預先安裝並設置到系統環境變數）
+- 現代網頁瀏覽器（Chrome、Firefox、Safari、Edge 等）
 - Windows, macOS 或 Linux 系統
 
 ## 安裝步驟
@@ -81,15 +82,11 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 安裝並執行專案：
 
 ```bash
-# 建立虛擬環境並安裝專案
-uv venv
-uv pip install -e .
+# 同步依賴並安裝專案（包含 gradio）
+uv sync
 
-# 執行應用程式（推薦方式）
+# 執行應用程式（會自動開啟瀏覽器）
 uv run ffsubtool
-
-# 或直接執行腳本
-uv run python ffmpeg_subtitle_toolkit.py
 ```
 
 ## 使用方法
@@ -98,8 +95,9 @@ uv run python ffmpeg_subtitle_toolkit.py
    ```bash
    uv run ffsubtool
    ```
+   程式會自動開啟瀏覽器並連接到 http://127.0.0.1:7860
 
-2. 在介面中選擇：
+2. 在網頁介面中選擇：
    - 影片檔案
    - 字幕檔案
    - 設定輸出檔案位置（如未指定，將自動產生）
@@ -128,7 +126,7 @@ uv run python ffmpeg_subtitle_toolkit.py
 - **FFmpeg未找到錯誤**：請確認FFmpeg已正確安裝並新增到系統環境變數中
 - **NVENC不可用**：如果GPU不支援NVENC，程式會自動切換到CPU編碼
 - **字幕路徑錯誤**：程式會自動處理含特殊字元的路徑問題
-- **查看記錄**：程式會在使用者主目錄下的FFmpegGUI_Logs資料夾中儲存詳細記錄
+- **查看記錄**：處理日誌會即時顯示在網頁介面中
 
 ## 常見問題
 
@@ -145,9 +143,19 @@ A: 可以調整字幕位置、邊距和透明度等設定。如果是字型問�
 
 本項目採用 MIT 授權協議。
 
+## 技術架構
+
+專案採用三層架構設計：
+- **Core 層**：FFmpeg 執行器、編碼策略、路徑驗證（UI 獨立）
+- **Features 層**：字幕燒錄業務邏輯
+- **UI 層**：Gradio 網頁介面（可替換為其他 UI）
+
+所有核心功能皆有完整的單元測試覆蓋（85%+ 測試覆蓋率）。
+
 ## 致謝
 
 - 感謝 [FFmpeg](https://ffmpeg.org/) 提供強大的多媒體處理框架
+- 感謝 [Gradio](https://gradio.app/) 提供優秀的網頁介面框架
 - 感謝所有開源社群的貢獻者
 
 ---
