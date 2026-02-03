@@ -4,6 +4,7 @@ Gradio 網頁介面模組
 提供基於 Gradio 的網頁 UI，用於字幕燒錄功能。
 """
 
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -28,6 +29,76 @@ class GradioApp:
         self.subtitle_burner: Optional[SubtitleBurner] = None
         self.log_buffer: list[str] = []
         self.processing = False
+        self.should_exit = False
+
+    @staticmethod
+    def _get_common_fonts() -> list[str]:
+        """
+        取得常見字型列表
+
+        Returns:
+            list[str]: 常見字型名稱列表
+        """
+        # 跨平台常見字型列表
+        common_fonts = [
+            "Arial",
+            "Arial Black",
+            "Comic Sans MS",
+            "Courier New",
+            "Georgia",
+            "Impact",
+            "Times New Roman",
+            "Trebuchet MS",
+            "Verdana",
+            # 中文字型 (Windows)
+            "Microsoft JhengHei",  # 微軟正黑體
+            "Microsoft YaHei",  # 微軟雅黑體
+            "SimSun",  # 宋體
+            "SimHei",  # 黑體
+            "KaiTi",  # 楷體
+            "FangSong",  # 仿宋
+            "PMingLiU",  # 新細明體
+            "MingLiU",  # 細明體
+            # 中文字型 (macOS)
+            "PingFang TC",  # 蘋方-繁
+            "PingFang SC",  # 蘋方-簡
+            "Heiti TC",  # 黑體-繁
+            "Songti TC",  # 宋體-繁
+            "STHeiti",  # 華文黑體
+            "STKaiti",  # 華文楷體
+            "STSong",  # 華文宋體
+            # 中文字型 (Linux)
+            "Noto Sans CJK TC",  # 思源黑體-繁
+            "Noto Sans CJK SC",  # 思源黑體-簡
+            "Noto Serif CJK TC",  # 思源宋體-繁
+            "WenQuanYi Zen Hei",  # 文泉驛正黑
+            "WenQuanYi Micro Hei",  # 文泉驛微米黑
+            # 其他常見字型
+            "DejaVu Sans",
+            "Liberation Sans",
+            "Ubuntu",
+        ]
+        return sorted(common_fonts)
+
+    def _shutdown_app(self) -> str:
+        """
+        關閉應用程式
+
+        Returns:
+            str: 關閉訊息
+        """
+        self.should_exit = True
+        # 延遲退出,讓 Gradio 有時間返回響應
+        import threading
+
+        def delayed_exit():
+            import time
+
+            time.sleep(1)
+            os._exit(0)
+
+        threading.Thread(target=delayed_exit, daemon=True).start()
+        return "⏹️ 程式正在關閉..."
 
     def create_ui(self) -> gr.Blocks:
         """
@@ -36,7 +107,87 @@ class GradioApp:
         Returns:
             gr.Blocks: Gradio 介面物件
         """
-        with gr.Blocks(title="FFmpeg 字幕工具箱", theme=gr.themes.Soft()) as demo:
+        # JavaScript 代碼：監聽瀏覽器關閉事件（使用最佳實踐）
+        browser_close_js = """
+        function() {
+            // 標記是否為手動關閉
+            let isManualShutdown = false;
+            let hasShutdownBeenSent = false;
+
+            // 發送關閉信號的統一函數
+            function sendShutdownSignal(source) {
+                if (hasShutdownBeenSent || isManualShutdown) {
+                    return;
+                }
+                hasShutdownBeenSent = true;
+
+                // 優先使用 sendBeacon (最可靠的方法)
+                const data = JSON.stringify({source: source});
+
+                if (navigator.sendBeacon) {
+                    try {
+                        const success = navigator.sendBeacon('/api/shutdown', data);
+                        if (success) {
+                            console.log('關閉信號已發送 (sendBeacon)');
+                            return;
+                        }
+                    } catch (e) {
+                        console.log('sendBeacon 失敗，嘗試 fetch:', e);
+                    }
+                }
+
+                // 後備方案：使用 fetch with keepalive
+                try {
+                    fetch('/api/shutdown', {
+                        method: 'POST',
+                        keepalive: true,
+                        headers: {'Content-Type': 'application/json'},
+                        body: data
+                    }).then(() => {
+                        console.log('關閉信號已發送 (fetch)');
+                    }).catch((e) => {
+                        console.log('fetch 失敗:', e);
+                    });
+                } catch (error) {
+                    console.log('無法發送關閉信號:', error);
+                }
+            }
+
+            // 主要方法：監聽頁面可見性變化（最可靠）
+            document.addEventListener('visibilitychange', function() {
+                if (document.visibilityState === 'hidden' && !isManualShutdown) {
+                    sendShutdownSignal('visibility_hidden');
+                }
+            });
+
+            // 後備方案 1：beforeunload 事件（桌面瀏覽器）
+            window.addEventListener('beforeunload', function(e) {
+                if (!isManualShutdown) {
+                    sendShutdownSignal('beforeunload');
+                }
+            });
+
+            // 後備方案 2：pagehide 事件（iOS Safari）
+            window.addEventListener('pagehide', function(e) {
+                if (!isManualShutdown) {
+                    sendShutdownSignal('pagehide');
+                }
+            });
+
+            // 監聽關閉按鈕點擊事件
+            document.addEventListener('click', function(e) {
+                const target = e.target;
+                if (target && target.textContent && target.textContent.includes('關閉程式')) {
+                    isManualShutdown = true;
+                    hasShutdownBeenSent = false; // 允許按鈕觸發關閉
+                }
+            });
+
+            console.log('✅ 自動關閉監聽已啟動 (visibilitychange + beforeunload + pagehide)');
+        }
+        """
+
+        with gr.Blocks(title="FFmpeg 字幕工具箱", theme=gr.themes.Soft(), js=browser_close_js) as demo:
             gr.Markdown("# 🎬 FFmpeg 字幕工具箱")
             gr.Markdown("簡單易用的影片字幕燒錄工具")
 
@@ -85,7 +236,17 @@ class GradioApp:
                 )
                 preset = gr.Dropdown(
                     label="編碼速度",
-                    choices=["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"],
+                    choices=[
+                        "ultrafast",
+                        "superfast",
+                        "veryfast",
+                        "faster",
+                        "fast",
+                        "medium",
+                        "slow",
+                        "slower",
+                        "veryslow",
+                    ],
                     value="medium",
                 )
 
@@ -94,7 +255,13 @@ class GradioApp:
                 gr.Markdown("### 🎨 字幕樣式")
 
                 with gr.Accordion("字型設定", open=True):
-                    font_name = gr.Textbox(label="字型名稱", value="Arial")
+                    font_name = gr.Dropdown(
+                        label="字型名稱",
+                        choices=self._get_common_fonts(),
+                        value="Arial",
+                        allow_custom_value=True,
+                        info="選擇字型或輸入自訂字型名稱",
+                    )
                     font_size = gr.Slider(
                         label="字型大小",
                         minimum=12,
@@ -158,6 +325,7 @@ class GradioApp:
         # 動作按鈕和狀態區
         with gr.Row():
             process_btn = gr.Button("🚀 開始處理", variant="primary", size="lg")
+            shutdown_btn = gr.Button("⏹️ 關閉程式", variant="secondary", size="lg")
             status_text = gr.Textbox(label="狀態", value="就緒", interactive=False)
 
         # 日誌輸出區
@@ -188,6 +356,13 @@ class GradioApp:
                 alignment,
             ],
             outputs=[status_text, log_output],
+        )
+
+        # 綁定關閉事件
+        shutdown_btn.click(
+            fn=self._shutdown_app,
+            inputs=None,
+            outputs=status_text,
         )
 
     def _process_subtitle(
