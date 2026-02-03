@@ -4,7 +4,6 @@ Gradio 網頁介面模組
 提供基於 Gradio 的網頁 UI，用於字幕燒錄功能。
 """
 
-import threading
 from pathlib import Path
 from typing import Optional
 
