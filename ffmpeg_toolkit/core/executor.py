@@ -151,7 +151,6 @@ class FFmpegExecutor:
             while True:
                 # 檢查是否超時
                 if time.time() - start_time > timeout:
-                    self._current_process.kill()
                     self._log(f"FFmpeg 處理超時（{timeout}秒），已終止")
                     raise TimeoutError(f"FFmpeg 處理超過 {timeout} 秒，已自動終止")
 
@@ -167,14 +166,19 @@ class FFmpegExecutor:
                         self._log(output_line.strip())
 
         except Exception:
-            self._current_process.kill()
-            self._current_process.wait()
+            # 發生錯誤時終止程序
+            if self._current_process:
+                self._current_process.kill()
+                self._current_process.wait()
             raise
-        finally:
-            self._current_process = None
 
-        return_code = self._current_process.poll() if self._current_process else 1
+        # 儲存返回碼（在重置 _current_process 之前）
+        return_code = self._current_process.poll()
         stderr = "".join(stderr_output)
+
+        # 清理
+        self._current_process = None
+
         return return_code, stderr
 
     def _sanitize_error(self, error_message: str) -> str:

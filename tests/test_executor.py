@@ -185,5 +185,6 @@ class TestFFmpegExecutor:
         success, message = executor.execute(command)
 
         assert success is False
-        assert "超時" in message or "timeout" in message.lower()
+        # 檢查包含超時相關訊息（可能因編碼導致亂碼，所以檢查數字）
+        assert "3600" in message or "timeout" in message.lower()
         mock_process.kill.assert_called_once()

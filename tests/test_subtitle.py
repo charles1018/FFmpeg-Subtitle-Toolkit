@@ -209,9 +209,12 @@ class TestSubtitleBurner:
     def test_burn_all_strategies_fail(
         self, burner, mock_executor, mock_video_file, mock_subtitle_file, mock_output_file
     ):
-        """測試所有編碼策略都失敗"""
-        # 所有編碼器都失敗
-        mock_executor.execute.return_value = (False, "Unknown error")
+        """測試所有編碼策略都失敗（NVENC 錯誤導致 fallback，但兩者都失敗）"""
+        # 第一次失敗（NVENC 錯誤，觸發 fallback），第二次也失敗
+        mock_executor.execute.side_effect = [
+            (False, "Cannot load nvEncodeAPI"),
+            (False, "Unknown error"),
+        ]
 
         config = SubtitleConfig(
             video_file=mock_video_file,
