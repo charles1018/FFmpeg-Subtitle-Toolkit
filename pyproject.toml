@@ -1,7 +1,7 @@
 [project]
 name = "ffmpeg-subtitle-toolkit"
 version = "0.1.0"
-description = "GUI toolkit to burn subtitles into videos using FFmpeg (Tkinter)"
+description = "Web-based GUI toolkit to burn subtitles into videos using FFmpeg (Gradio)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
@@ -10,10 +10,11 @@ authors = [
 ]
 dependencies = [
   "Pillow>=9.0.0",
+  "gradio>=4.0.0",
 ]
 
 [project.scripts]
-ffsubtool = "ffmpeg_subtitle_toolkit:main"
+ffsubtool = "ffmpeg_toolkit.main:main"
 
 [build-system]
 requires = ["hatchling"]
