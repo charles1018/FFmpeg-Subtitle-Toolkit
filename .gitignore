@@ -173,3 +173,6 @@ cython_debug/
 # Claude Code configuration (local development only, not for public repo)
 CLAUDE.md
 .claude/
+
+# Git worktrees (isolated development workspaces)
+.worktrees/
