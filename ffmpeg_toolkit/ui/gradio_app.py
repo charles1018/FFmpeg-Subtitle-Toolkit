@@ -187,21 +187,354 @@ class GradioApp:
         }
         """
 
-        with gr.Blocks(title="FFmpeg 字幕工具箱", theme=gr.themes.Soft(), js=browser_close_js) as demo:
+        # 自訂 CSS - Cinema-grade aesthetic
+        custom_css = """
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+TC:wght@400;500;700&display=swap');
+
+        :root {
+            --cinema-bg: #0a0e1a;
+            --cinema-surface: #151b2e;
+            --cinema-card: rgba(25, 35, 55, 0.6);
+            --cinema-accent: #00d9ff;
+            --cinema-accent-glow: rgba(0, 217, 255, 0.15);
+            --cinema-secondary: #6366f1;
+            --cinema-text: #e2e8f0;
+            --cinema-text-dim: #94a3b8;
+            --cinema-border: rgba(100, 116, 139, 0.2);
+            --cinema-success: #10b981;
+            --cinema-glass: rgba(255, 255, 255, 0.05);
+        }
+
+        /* 全域背景與動畫漸層 */
+        .gradio-container {
+            font-family: 'Noto Sans TC', 'JetBrains Mono', monospace !important;
+            background: var(--cinema-bg) !important;
+            background-image:
+                radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(0, 217, 255, 0.1) 0px, transparent 50%),
+                radial-gradient(at 50% 50%, rgba(139, 92, 246, 0.05) 0px, transparent 50%);
+            animation: gradientShift 15s ease infinite;
+            color: var(--cinema-text) !important;
+        }
+
+        @keyframes gradientShift {
+            0%, 100% {
+                background-position: 0% 50%, 100% 50%, 50% 50%;
+            }
+            50% {
+                background-position: 100% 50%, 0% 50%, 25% 75%;
+            }
+        }
+
+        /* 標題區域 - Cinematic header */
+        .gradio-container h1 {
+            font-family: 'JetBrains Mono', monospace !important;
+            font-size: 3rem !important;
+            font-weight: 600 !important;
+            background: linear-gradient(135deg, var(--cinema-accent) 0%, var(--cinema-secondary) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 0.5rem !important;
+            letter-spacing: -0.02em;
+            animation: titleFadeIn 1s ease-out;
+        }
+
+        @keyframes titleFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .gradio-container h1 + p, .gradio-container h1 ~ p {
+            font-size: 1.125rem !important;
+            color: var(--cinema-text-dim) !important;
+            font-weight: 400 !important;
+            margin-top: 0 !important;
+        }
+
+        /* Tabs - 電影時間軸風格 */
+        .tabs {
+            border: none !important;
+            background: transparent !important;
+        }
+
+        .tab-nav {
+            background: var(--cinema-card) !important;
+            backdrop-filter: blur(20px) !important;
+            border: 1px solid var(--cinema-border) !important;
+            border-radius: 16px !important;
+            padding: 8px !important;
+            margin-bottom: 2rem !important;
+        }
+
+        .tab-nav button {
+            font-family: 'Noto Sans TC', sans-serif !important;
+            font-weight: 500 !important;
+            color: var(--cinema-text-dim) !important;
+            border: none !important;
+            border-radius: 12px !important;
+            padding: 12px 24px !important;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            background: transparent !important;
+        }
+
+        .tab-nav button:hover {
+            background: var(--cinema-glass) !important;
+            color: var(--cinema-text) !important;
+            transform: translateY(-2px);
+        }
+
+        .tab-nav button.selected {
+            background: linear-gradient(135deg, var(--cinema-accent), var(--cinema-secondary)) !important;
+            color: white !important;
+            box-shadow: 0 8px 32px var(--cinema-accent-glow) !important;
+        }
+
+        /* 玻璃擬態卡片 */
+        .form, .block {
+            background: var(--cinema-card) !important;
+            backdrop-filter: blur(20px) !important;
+            border: 1px solid var(--cinema-border) !important;
+            border-radius: 20px !important;
+            padding: 24px !important;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2) !important;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        }
+
+        .form:hover, .block:hover {
+            border-color: rgba(0, 217, 255, 0.3) !important;
+            box-shadow: 0 12px 48px rgba(0, 217, 255, 0.1) !important;
+            transform: translateY(-4px);
+        }
+
+        /* 區塊標題 */
+        h2, h3 {
+            font-family: 'JetBrains Mono', monospace !important;
+            color: var(--cinema-text) !important;
+            font-weight: 600 !important;
+            letter-spacing: -0.01em !important;
+            margin-bottom: 1rem !important;
+        }
+
+        /* 輸入框與下拉選單 */
+        input, select, textarea, .dropdown {
+            font-family: 'JetBrains Mono', monospace !important;
+            background: var(--cinema-surface) !important;
+            border: 1px solid var(--cinema-border) !important;
+            border-radius: 12px !important;
+            color: var(--cinema-text) !important;
+            padding: 12px 16px !important;
+            transition: all 0.3s ease !important;
+        }
+
+        input:focus, select:focus, textarea:focus {
+            border-color: var(--cinema-accent) !important;
+            box-shadow: 0 0 0 3px var(--cinema-accent-glow) !important;
+            outline: none !important;
+        }
+
+        /* 按鈕 - Cinematic style */
+        button {
+            font-family: 'Noto Sans TC', sans-serif !important;
+            font-weight: 600 !important;
+            border-radius: 14px !important;
+            padding: 14px 32px !important;
+            border: none !important;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            position: relative !important;
+            overflow: hidden !important;
+        }
+
+        button:before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+
+        button:active:before {
+            width: 300px;
+            height: 300px;
+        }
+
+        button.primary {
+            background: linear-gradient(135deg, var(--cinema-accent), var(--cinema-secondary)) !important;
+            color: white !important;
+            box-shadow: 0 8px 24px var(--cinema-accent-glow) !important;
+        }
+
+        button.primary:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 36px rgba(0, 217, 255, 0.3) !important;
+        }
+
+        button.secondary {
+            background: var(--cinema-surface) !important;
+            color: var(--cinema-text) !important;
+            border: 1px solid var(--cinema-border) !important;
+        }
+
+        button.secondary:hover {
+            background: var(--cinema-card) !important;
+            transform: translateY(-2px);
+        }
+
+        /* 日誌輸出 - Terminal style */
+        #log-output {
+            font-family: 'JetBrains Mono', monospace !important;
+            background: #0d1117 !important;
+            border: 1px solid rgba(0, 217, 255, 0.3) !important;
+            border-radius: 16px !important;
+            color: #58a6ff !important;
+            padding: 20px !important;
+            line-height: 1.6 !important;
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.4), 0 0 20px rgba(0, 217, 255, 0.1) !important;
+            font-size: 0.875rem !important;
+        }
+
+        /* 狀態文字 */
+        #status-text {
+            font-family: 'JetBrains Mono', monospace !important;
+            font-weight: 500 !important;
+            font-size: 1rem !important;
+        }
+
+        /* Accordion */
+        .accordion {
+            background: var(--cinema-glass) !important;
+            border: 1px solid var(--cinema-border) !important;
+            border-radius: 14px !important;
+            margin-bottom: 12px !important;
+            overflow: hidden !important;
+            transition: all 0.3s ease !important;
+        }
+
+        .accordion:hover {
+            border-color: rgba(0, 217, 255, 0.3) !important;
+        }
+
+        /* ColorPicker */
+        .color-picker {
+            border-radius: 12px !important;
+            overflow: hidden !important;
+        }
+
+        /* Slider */
+        input[type="range"] {
+            background: var(--cinema-surface) !important;
+            height: 8px !important;
+            border-radius: 4px !important;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            background: linear-gradient(135deg, var(--cinema-accent), var(--cinema-secondary)) !important;
+            border: 2px solid white !important;
+            box-shadow: 0 4px 12px var(--cinema-accent-glow) !important;
+        }
+
+        /* 檔案上傳區域 */
+        .file-upload {
+            background: var(--cinema-surface) !important;
+            border: 2px dashed var(--cinema-border) !important;
+            border-radius: 16px !important;
+            padding: 32px !important;
+            transition: all 0.3s ease !important;
+        }
+
+        .file-upload:hover {
+            border-color: var(--cinema-accent) !important;
+            background: var(--cinema-card) !important;
+        }
+
+        /* 微動畫 - Stagger entrance */
+        .block {
+            animation: blockFadeIn 0.6s ease-out backwards;
+        }
+
+        .block:nth-child(1) { animation-delay: 0.1s; }
+        .block:nth-child(2) { animation-delay: 0.2s; }
+        .block:nth-child(3) { animation-delay: 0.3s; }
+        .block:nth-child(4) { animation-delay: 0.4s; }
+
+        @keyframes blockFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* 滾動條 */
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--cinema-surface);
+            border-radius: 5px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: linear-gradient(135deg, var(--cinema-accent), var(--cinema-secondary));
+            border-radius: 5px;
+            transition: all 0.3s ease;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--cinema-accent);
+        }
+        """
+
+        # 創建自訂主題
+        custom_theme = gr.themes.Base(
+            primary_hue="blue",
+            secondary_hue="cyan",
+            neutral_hue="slate",
+            font=("Noto Sans TC", "JetBrains Mono", "sans-serif"),
+            font_mono=("JetBrains Mono", "monospace"),
+        ).set(
+            body_background_fill="#0a0e1a",
+            body_background_fill_dark="#0a0e1a",
+            button_primary_background_fill="linear-gradient(135deg, #00d9ff, #6366f1)",
+            button_primary_background_fill_hover="linear-gradient(135deg, #00b8d9, #5558e3)",
+        )
+
+        with gr.Blocks(title="FFmpeg 字幕工具箱") as demo:
             gr.Markdown("# 🎬 FFmpeg 字幕工具箱")
-            gr.Markdown("簡單易用的影片字幕燒錄工具")
+            gr.Markdown("專業級影片字幕燒錄工具 — 簡單、快速、高品質")
 
             with gr.Tabs():
                 with gr.Tab("📝 字幕燒錄"):
                     self._create_subtitle_tab()
 
-                with gr.Tab("✂️ 影片剪輯 (即將推出)"):
+                with gr.Tab("✂️ 影片剪輯"):
                     gr.Markdown("### 影片剪輯功能")
-                    gr.Markdown("此功能尚未實作，敬請期待！")
+                    gr.Markdown("此功能開發中，即將推出")
 
-                with gr.Tab("🔊 音訊處理 (即將推出)"):
+                with gr.Tab("🔊 音訊處理"):
                     gr.Markdown("### 音訊處理功能")
-                    gr.Markdown("此功能尚未實作，敬請期待！")
+                    gr.Markdown("此功能開發中,即將推出")
+
+        # 儲存自訂設定供 launch 使用
+        demo._custom_theme = custom_theme
+        demo._custom_css = custom_css
+        demo._custom_js = browser_close_js
 
         return demo
 
@@ -324,9 +657,9 @@ class GradioApp:
 
         # 動作按鈕和狀態區
         with gr.Row():
-            process_btn = gr.Button("🚀 開始處理", variant="primary", size="lg")
-            shutdown_btn = gr.Button("⏹️ 關閉程式", variant="secondary", size="lg")
-            status_text = gr.Textbox(label="狀態", value="就緒", interactive=False)
+            process_btn = gr.Button("🚀 開始處理", variant="primary", size="lg", elem_classes="primary")
+            shutdown_btn = gr.Button("⏹️ 關閉程式", variant="secondary", size="lg", elem_classes="secondary")
+            status_text = gr.Textbox(label="狀態", value="就緒", interactive=False, elem_id="status-text")
 
         # 日誌輸出區
         log_output = gr.Textbox(
@@ -335,6 +668,7 @@ class GradioApp:
             max_lines=20,
             interactive=False,
             autoscroll=True,
+            elem_id="log-output",
         )
 
         # 綁定處理事件

@@ -15,6 +15,17 @@ from .ui.gradio_app import GradioApp
 
 def main():
     """主程式進入點"""
+    # 設定 Windows 終端機編碼為 UTF-8
+    if sys.platform == "win32":
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+            sys.stderr.reconfigure(encoding="utf-8")
+        except AttributeError:
+            # Python < 3.7 的後備方案
+            import io
+            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
+
     # 檢查 FFmpeg 是否可用
     if not shutil.which("ffmpeg"):
         print("❌ 錯誤：找不到 FFmpeg")
@@ -89,12 +100,20 @@ def main():
     print("🌐 正在開啟瀏覽器...")
     print("💡 提示：關閉瀏覽器視窗後，程式將自動退出")
 
+    # 取得自訂設定 (Gradio 6.0 要求傳遞給 launch)
+    custom_theme = getattr(interface, "_custom_theme", None)
+    custom_css = getattr(interface, "_custom_css", None)
+    custom_js = getattr(interface, "_custom_js", None)
+
     interface.launch(
         server_name="127.0.0.1",
         server_port=7860,
         share=False,
         inbrowser=True,  # 自動開啟瀏覽器
         quiet=False,
+        theme=custom_theme,
+        css=custom_css,
+        js=custom_js,
     )
 
 
