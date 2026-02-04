@@ -339,6 +339,30 @@ class GradioApp:
             outline: none !important;
         }
 
+        /* 確保下拉選單選項容器正常顯示 */
+        .dropdown-menu, .dropdown-content, [role="listbox"], .svelte-select-list {
+            position: absolute !important;
+            z-index: 9999 !important;
+            background: var(--cinema-surface) !important;
+            border: 1px solid var(--cinema-accent) !important;
+            border-radius: 12px !important;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4) !important;
+            max-height: 300px !important;
+            overflow-y: auto !important;
+        }
+
+        /* 下拉選項樣式 */
+        .dropdown-menu li, .dropdown-content li, [role="option"] {
+            padding: 10px 16px !important;
+            color: var(--cinema-text) !important;
+            cursor: pointer !important;
+            transition: background 0.2s ease !important;
+        }
+
+        .dropdown-menu li:hover, .dropdown-content li:hover, [role="option"]:hover {
+            background: var(--cinema-card) !important;
+        }
+
         /* 按鈕 - Cinematic style */
         button {
             font-family: 'Noto Sans TC', sans-serif !important;
@@ -588,13 +612,41 @@ class GradioApp:
                 gr.Markdown("### 🎨 字幕樣式")
 
                 with gr.Accordion("字型設定", open=True):
-                    font_name = gr.Dropdown(
-                        label="字型名稱",
-                        choices=self._get_common_fonts(),
-                        value="Arial",
-                        allow_custom_value=True,
-                        info="選擇字型或輸入自訂字型名稱",
+                    # 常見字型選項
+                    font_preset = gr.Radio(
+                        label="字型預設",
+                        choices=[
+                            ("微軟正黑體 (推薦)", "Microsoft JhengHei"),
+                            ("微軟雅黑體", "Microsoft YaHei"),
+                            ("蘋方-繁體", "PingFang TC"),
+                            ("思源黑體-繁", "Noto Sans CJK TC"),
+                            ("黑體", "SimHei"),
+                            ("Arial", "Arial"),
+                            ("Times New Roman", "Times New Roman"),
+                            ("自訂字型", "custom"),
+                        ],
+                        value="Microsoft JhengHei",
+                        info="選擇常用字型或使用自訂",
                     )
+
+                    # 自訂字型輸入框（只在選擇「自訂字型」時顯示）
+                    custom_font_input = gr.Textbox(
+                        label="自訂字型名稱",
+                        placeholder="例如: PMingLiU, SimSun, Courier New",
+                        visible=False,
+                        info="輸入系統已安裝的字型名稱",
+                    )
+
+                    # 當選擇「自訂字型」時顯示輸入框
+                    def toggle_custom_font(choice):
+                        return gr.Textbox(visible=(choice == "custom"))
+
+                    font_preset.change(
+                        fn=toggle_custom_font,
+                        inputs=font_preset,
+                        outputs=custom_font_input,
+                    )
+
                     font_size = gr.Slider(
                         label="字型大小",
                         minimum=12,
@@ -680,7 +732,8 @@ class GradioApp:
                 output_path,
                 codec,
                 preset,
-                font_name,
+                font_preset,
+                custom_font_input,
                 font_size,
                 primary_color,
                 transparency,
@@ -706,7 +759,8 @@ class GradioApp:
         output_name: str,
         codec_choice: str,
         preset: str,
-        font_name: str,
+        font_preset: str,
+        custom_font_input: str,
         font_size: int,
         primary_color: str,
         transparency: int,
@@ -724,7 +778,8 @@ class GradioApp:
             output_name: 輸出檔案名稱
             codec_choice: 編碼器選擇
             preset: 編碼速度
-            font_name: 字型名稱
+            font_preset: 字型預設選擇
+            custom_font_input: 自訂字型名稱
             font_size: 字型大小
             primary_color: 字幕顏色（HEX）
             transparency: 背景透明度
@@ -766,6 +821,18 @@ class GradioApp:
             self._log(f"影片檔案: {video_path.name}")
             self._log(f"字幕檔案: {subtitle_path.name}")
             self._log(f"輸出檔案: {output_file}")
+
+            # 決定使用的字型名稱
+            if font_preset == "custom":
+                # 使用自訂字型
+                font_name = custom_font_input.strip() if custom_font_input else "Arial"
+                if not font_name:
+                    font_name = "Arial"
+                self._log(f"使用自訂字型: {font_name}")
+            else:
+                # 使用預設字型
+                font_name = font_preset
+                self._log(f"使用預設字型: {font_name}")
 
             # 轉換編碼器選擇
             encoding = "libx264" if codec_choice == "H.264 (推薦)" else "libx265"
