@@ -432,6 +432,21 @@ class GradioApp:
             transform: translateY(-2px);
         }
 
+        /* 關閉程式按鈕 - 醒目的紅色風格 */
+        button.stop {
+            background: linear-gradient(135deg, #dc2626, #991b1b) !important;
+            color: white !important;
+            border: 1px solid rgba(220, 38, 38, 0.5) !important;
+            box-shadow: 0 4px 16px rgba(220, 38, 38, 0.2) !important;
+            align-self: flex-end !important;
+        }
+
+        button.stop:hover {
+            background: linear-gradient(135deg, #ef4444, #b91c1c) !important;
+            box-shadow: 0 8px 24px rgba(220, 38, 38, 0.4) !important;
+            transform: translateY(-2px);
+        }
+
         /* 日誌輸出 - Terminal style */
         #log-output {
             font-family: 'JetBrains Mono', monospace !important;
@@ -560,12 +575,21 @@ class GradioApp:
             gr.Markdown("# 🎬 FFmpeg 工具箱")
             gr.Markdown("專業級影片處理工具 — 轉換、剪輯、字幕、音訊提取")
 
-            self.output_dir = gr.Textbox(
-                label="📁 輸出目錄",
-                value=str(Path.home() / "Documents"),
-                info="所有處理後的檔案將儲存到此目錄",
-                interactive=True,
-            )
+            with gr.Row():
+                self.output_dir = gr.Textbox(
+                    label="📁 輸出目錄",
+                    value=str(Path.home() / "Documents"),
+                    info="所有處理後的檔案將儲存到此目錄",
+                    interactive=True,
+                    scale=4,
+                )
+                shutdown_btn = gr.Button(
+                    "⏹️ 關閉程式",
+                    variant="stop",
+                    size="lg",
+                    scale=1,
+                    min_width=120,
+                )
 
             with gr.Tabs():
                 with gr.Tab("ℹ️ 影片資訊"):
@@ -588,6 +612,14 @@ class GradioApp:
 
                 with gr.Tab("🔊 音訊提取"):
                     self._create_audio_extractor_tab()
+
+            # 綁定全域關閉事件
+            shutdown_status = gr.Textbox(visible=False)
+            shutdown_btn.click(
+                fn=self._shutdown_app,
+                inputs=None,
+                outputs=shutdown_status,
+            )
 
         # 儲存自訂設定供 launch 使用
         demo._custom_theme = custom_theme
@@ -1361,7 +1393,6 @@ class GradioApp:
         # 動作按鈕和狀態區
         with gr.Row():
             process_btn = gr.Button("🚀 開始處理", variant="primary", size="lg", elem_classes="primary")
-            shutdown_btn = gr.Button("⏹️ 關閉程式", variant="secondary", size="lg", elem_classes="secondary")
             status_text = gr.Textbox(label="狀態", value="就緒", interactive=False, elem_id="status-text")
 
         # 日誌輸出區
@@ -1397,12 +1428,6 @@ class GradioApp:
             outputs=[status_text, log_output],
         )
 
-        # 綁定關閉事件
-        shutdown_btn.click(
-            fn=self._shutdown_app,
-            inputs=None,
-            outputs=status_text,
-        )
 
     def _process_subtitle(
         self,
