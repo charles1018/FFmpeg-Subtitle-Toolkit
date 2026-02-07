@@ -52,44 +52,37 @@ class EncodingStrategy:
         # 可用編碼器快取
         self._available_encoders: set[str] | None = None
 
-    def get_codecs(self, preferred: str) -> Iterator[str]:
+    def get_codecs(self, preferred: str, hw_accel: str = "auto") -> Iterator[str]:
         """
         返回編碼器列表（含回退策略）
 
-        根據偏好的編碼器，返回 GPU 優先、CPU 回退的編碼器列表。
-
         Args:
-            preferred: 偏好的編碼器名稱
-                      - "libx264": H.264 CPU 編碼器
-                      - "libx265": H.265 CPU 編碼器
-                      - "h264_nvenc": H.264 NVENC GPU 編碼器
-                      - "hevc_nvenc": H.265 NVENC GPU 編碼器
+            preferred: 偏好的 CPU 編碼器 ("libx264" 或 "libx265")
+            hw_accel: 硬體加速模式 ("auto"/"nvenc"/"qsv"/"cpu")
 
         Yields:
-            str: 編碼器名稱（GPU 優先，CPU 回退）
-
-        Examples:
-            >>> strategy = EncodingStrategy()
-            >>> list(strategy.get_codecs("libx264"))
-            ['h264_nvenc', 'libx264']
-            >>> list(strategy.get_codecs("libx265"))
-            ['hevc_nvenc', 'libx265']
+            str: 編碼器名稱
         """
-        if preferred == "libx264":
-            yield "h264_nvenc"  # 先嘗試 GPU
-            yield "libx264"  # 回退至 CPU
-        elif preferred == "libx265":
-            yield "hevc_nvenc"
-            yield "libx265"
-        elif preferred == "h264_nvenc":
-            yield "h264_nvenc"
-            yield "libx264"  # 回退選項
-        elif preferred == "hevc_nvenc":
-            yield "hevc_nvenc"
-            yield "libx265"
-        else:
-            # 未知編碼器，直接返回（不提供回退）
+        is_h265 = preferred in ("libx265", "hevc_nvenc", "hevc_qsv")
+        cpu_codec = "libx265" if is_h265 else "libx264"
+        codec_key = "hevc" if is_h265 else "h264"
+
+        # 未知編碼器（非 h264/h265 系列），直接返回
+        known_codecs = {"libx264", "libx265", "h264_nvenc", "hevc_nvenc", "h264_qsv", "hevc_qsv"}
+        if preferred not in known_codecs:
             yield preferred
+            return
+
+        if hw_accel == "cpu":
+            yield cpu_codec
+        elif hw_accel in self.HW_ACCELERATORS:
+            yield self.HW_ACCELERATORS[hw_accel][codec_key]
+            yield cpu_codec
+        else:
+            # auto: 預設用 NVENC（向後相容）
+            nvenc_info = self.HW_ACCELERATORS["nvenc"]
+            yield nvenc_info[codec_key]
+            yield cpu_codec
 
     def should_fallback(self, error_message: str) -> bool:
         """

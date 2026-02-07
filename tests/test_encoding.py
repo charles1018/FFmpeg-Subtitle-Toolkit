@@ -146,3 +146,43 @@ Encoders:
         strategy._available_encoders = set()
         accels = strategy.get_available_hw_accelerators()
         assert accels == []
+
+
+class TestGetCodecsWithHwAccel:
+    """測試帶硬體加速選擇的 get_codecs"""
+
+    def test_auto_mode_nvenc_first(self):
+        strategy = EncodingStrategy()
+        codecs = list(strategy.get_codecs("libx264", hw_accel="auto"))
+        assert codecs == ["h264_nvenc", "libx264"]
+
+    def test_nvenc_mode(self):
+        strategy = EncodingStrategy()
+        codecs = list(strategy.get_codecs("libx264", hw_accel="nvenc"))
+        assert codecs == ["h264_nvenc", "libx264"]
+
+    def test_qsv_mode_h264(self):
+        strategy = EncodingStrategy()
+        codecs = list(strategy.get_codecs("libx264", hw_accel="qsv"))
+        assert codecs == ["h264_qsv", "libx264"]
+
+    def test_qsv_mode_h265(self):
+        strategy = EncodingStrategy()
+        codecs = list(strategy.get_codecs("libx265", hw_accel="qsv"))
+        assert codecs == ["hevc_qsv", "libx265"]
+
+    def test_cpu_mode(self):
+        strategy = EncodingStrategy()
+        codecs = list(strategy.get_codecs("libx264", hw_accel="cpu"))
+        assert codecs == ["libx264"]
+
+    def test_cpu_mode_h265(self):
+        strategy = EncodingStrategy()
+        codecs = list(strategy.get_codecs("libx265", hw_accel="cpu"))
+        assert codecs == ["libx265"]
+
+    def test_default_is_auto(self):
+        strategy = EncodingStrategy()
+        codecs_default = list(strategy.get_codecs("libx264"))
+        codecs_auto = list(strategy.get_codecs("libx264", hw_accel="auto"))
+        assert codecs_default == codecs_auto
