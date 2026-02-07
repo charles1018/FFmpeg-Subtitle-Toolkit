@@ -6,6 +6,7 @@
 """
 
 import re
+import subprocess
 from typing import Iterator
 
 
@@ -28,10 +29,28 @@ class EncodingStrategy:
         r"nvenc.*not available",
     ]
 
+    # QSV 錯誤檢測模式（正則表達式）
+    QSV_ERROR_PATTERNS = [
+        r"Error initializing an MFX session",
+        r"Error during initialization.*qsv",
+        r"Selected driver.*not available",
+        r"Unknown encoder.*qsv",
+        r"qsv.*not available",
+    ]
+
+    # 支援的硬體加速器定義
+    HW_ACCELERATORS = {
+        "nvenc": {"label": "NVIDIA NVENC", "h264": "h264_nvenc", "hevc": "hevc_nvenc"},
+        "qsv": {"label": "Intel QSV", "h264": "h264_qsv", "hevc": "hevc_qsv"},
+    }
+
     def __init__(self):
         """初始化編碼策略"""
-        # 編譯錯誤模式正則表達式（提升效能）
-        self._error_regex = re.compile("|".join(self.NVENC_ERROR_PATTERNS), re.IGNORECASE)
+        # 編譯錯誤模式正則表達式（結合 NVENC 和 QSV 模式）
+        all_patterns = self.NVENC_ERROR_PATTERNS + self.QSV_ERROR_PATTERNS
+        self._error_regex = re.compile("|".join(all_patterns), re.IGNORECASE)
+        # 可用編碼器快取
+        self._available_encoders: set[str] | None = None
 
     def get_codecs(self, preferred: str) -> Iterator[str]:
         """
@@ -74,13 +93,13 @@ class EncodingStrategy:
 
     def should_fallback(self, error_message: str) -> bool:
         """
-        檢查錯誤訊息是否為 NVENC 失敗（需要回退至 CPU）
+        檢查錯誤訊息是否為 GPU 編碼失敗（需要回退至 CPU）
 
         Args:
             error_message: FFmpeg 錯誤訊息
 
         Returns:
-            bool: 如果是 NVENC 錯誤則返回 True，否則返回 False
+            bool: 如果是 GPU 編碼錯誤則返回 True，否則返回 False
 
         Examples:
             >>> strategy = EncodingStrategy()
@@ -92,3 +111,54 @@ class EncodingStrategy:
             False
         """
         return bool(self._error_regex.search(error_message))
+
+    def detect_available_encoders(self) -> set[str]:
+        """
+        偵測系統可用的硬體編碼器
+
+        執行 ffmpeg -encoders 並解析輸出，找出可用的 GPU 編碼器。
+        結果會被快取，避免重複執行。
+
+        Returns:
+            set[str]: 可用的硬體編碼器名稱集合
+        """
+        if self._available_encoders is not None:
+            return self._available_encoders
+
+        hw_encoder_names = set()
+        for accel_info in self.HW_ACCELERATORS.values():
+            hw_encoder_names.add(accel_info["h264"])
+            hw_encoder_names.add(accel_info["hevc"])
+
+        try:
+            result = subprocess.run(
+                ["ffmpeg", "-encoders", "-hide_banner"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            found = set()
+            for line in result.stdout.splitlines():
+                line = line.strip()
+                for encoder_name in hw_encoder_names:
+                    if encoder_name in line.split():
+                        found.add(encoder_name)
+            self._available_encoders = found
+        except Exception:
+            self._available_encoders = set()
+
+        return self._available_encoders
+
+    def get_available_hw_accelerators(self) -> list[tuple[str, str]]:
+        """
+        取得系統可用的硬體加速器列表
+
+        Returns:
+            list[tuple[str, str]]: (標籤, 加速器 ID) 的列表
+        """
+        available = self.detect_available_encoders()
+        result = []
+        for accel_id, accel_info in self.HW_ACCELERATORS.items():
+            if accel_info["h264"] in available or accel_info["hevc"] in available:
+                result.append((accel_info["label"], accel_id))
+        return result

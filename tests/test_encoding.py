@@ -73,3 +73,76 @@ class TestEncodingStrategy:
         assert strategy.should_fallback("CANNOT LOAD NVENCODEAPI")
         assert strategy.should_fallback("no nvenc capable devices found")
         assert strategy.should_fallback("NvEnc Not Available")
+
+
+from unittest.mock import patch, MagicMock
+
+
+class TestDetectAvailableEncoders:
+    """測試可用編碼器偵測"""
+
+    SAMPLE_ENCODERS_OUTPUT = """\
+Encoders:
+ V..... = Video
+ A..... = Audio
+ S..... = Subtitle
+ V....D libx264              libx264 H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10 (codec h264)
+ V....D libx265              libx265 H.265 / HEVC (codec hevc)
+ V....D h264_nvenc           NVIDIA NVENC H.264 encoder (codec h264)
+ V....D hevc_nvenc           NVIDIA NVENC hevc encoder (codec hevc)
+ V....D h264_qsv             H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10 (Intel Quick Sync Video acceleration) (codec h264)
+ V....D hevc_qsv             HEVC (Intel Quick Sync Video acceleration) (codec hevc)
+"""
+
+    SAMPLE_NO_GPU_OUTPUT = """\
+Encoders:
+ V....D libx264              libx264 H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10 (codec h264)
+ V....D libx265              libx265 H.265 / HEVC (codec hevc)
+"""
+
+    @patch("subprocess.run")
+    def test_detect_all_encoders(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stdout=self.SAMPLE_ENCODERS_OUTPUT)
+        strategy = EncodingStrategy()
+        available = strategy.detect_available_encoders()
+        assert "h264_nvenc" in available
+        assert "hevc_nvenc" in available
+        assert "h264_qsv" in available
+        assert "hevc_qsv" in available
+
+    @patch("subprocess.run")
+    def test_detect_no_gpu(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stdout=self.SAMPLE_NO_GPU_OUTPUT)
+        strategy = EncodingStrategy()
+        available = strategy.detect_available_encoders()
+        assert "h264_nvenc" not in available
+        assert "h264_qsv" not in available
+
+    @patch("subprocess.run")
+    def test_detect_caches_result(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stdout=self.SAMPLE_ENCODERS_OUTPUT)
+        strategy = EncodingStrategy()
+        result1 = strategy.detect_available_encoders()
+        result2 = strategy.detect_available_encoders()
+        assert result1 is result2
+        assert mock_run.call_count == 1
+
+    @patch("subprocess.run")
+    def test_detect_ffmpeg_failure(self, mock_run):
+        mock_run.side_effect = FileNotFoundError("ffmpeg not found")
+        strategy = EncodingStrategy()
+        available = strategy.detect_available_encoders()
+        assert available == set()
+
+    def test_get_available_hw_accelerators(self):
+        strategy = EncodingStrategy()
+        strategy._available_encoders = {"h264_nvenc", "hevc_nvenc", "h264_qsv", "hevc_qsv"}
+        accels = strategy.get_available_hw_accelerators()
+        assert ("NVIDIA NVENC", "nvenc") in accels
+        assert ("Intel QSV", "qsv") in accels
+
+    def test_get_available_hw_accelerators_no_gpu(self):
+        strategy = EncodingStrategy()
+        strategy._available_encoders = set()
+        accels = strategy.get_available_hw_accelerators()
+        assert accels == []
