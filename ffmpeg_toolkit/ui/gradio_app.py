@@ -39,6 +39,16 @@ class GradioApp:
         self.should_exit = False
 
     @staticmethod
+    def _resolve_output_dir(output_dir: str) -> Path:
+        """解析輸出目錄路徑，空值時 fallback 到 Documents"""
+        if output_dir and output_dir.strip():
+            path = Path(output_dir.strip())
+        else:
+            path = Path.home() / "Documents"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    @staticmethod
     def _get_common_fonts() -> list[str]:
         """
         取得常見字型列表
@@ -550,6 +560,13 @@ class GradioApp:
             gr.Markdown("# 🎬 FFmpeg 工具箱")
             gr.Markdown("專業級影片處理工具 — 轉換、剪輯、字幕、音訊提取")
 
+            self.output_dir = gr.Textbox(
+                label="📁 輸出目錄",
+                value=str(Path.home() / "Documents"),
+                info="所有處理後的檔案將儲存到此目錄",
+                interactive=True,
+            )
+
             with gr.Tabs():
                 with gr.Tab("ℹ️ 影片資訊"):
                     self._create_media_info_tab()
@@ -671,11 +688,13 @@ class GradioApp:
 
         conv_btn.click(
             fn=self._process_convert,
-            inputs=[conv_video, conv_output, conv_format, conv_codec, conv_preset, conv_crf],
+            inputs=[conv_video, conv_output, conv_format, conv_codec, conv_preset, conv_crf, self.output_dir],
             outputs=[conv_status, conv_log],
         )
 
-    def _process_convert(self, video_file, output_name, output_format, codec_choice, preset, crf) -> tuple[str, str]:
+    def _process_convert(
+        self, video_file, output_name, output_format, codec_choice, preset, crf, output_dir
+    ) -> tuple[str, str]:
         """處理影片轉換"""
         self.log_buffer = []
 
@@ -696,7 +715,8 @@ class GradioApp:
 
             # 確保輸出副檔名正確
             output_base = Path(output_name).stem
-            output_file = video_path.parent / f"{output_base}{ext}"
+            output_path = self._resolve_output_dir(output_dir)
+            output_file = output_path / f"{output_base}{ext}"
 
             encoding = "libx264" if codec_choice == "H.264 (推薦)" else "libx265"
 
@@ -757,11 +777,11 @@ class GradioApp:
 
         trim_btn.click(
             fn=self._process_trim,
-            inputs=[trim_video, trim_output, trim_start, trim_end, trim_copy],
+            inputs=[trim_video, trim_output, trim_start, trim_end, trim_copy, self.output_dir],
             outputs=[trim_status, trim_log],
         )
 
-    def _process_trim(self, video_file, output_name, start_time, end_time, copy_mode) -> tuple[str, str]:
+    def _process_trim(self, video_file, output_name, start_time, end_time, copy_mode, output_dir) -> tuple[str, str]:
         """處理影片剪輯"""
         self.log_buffer = []
 
@@ -781,7 +801,8 @@ class GradioApp:
             self.processing = True
 
             video_path = Path(video_file)
-            output_file = video_path.parent / output_name
+            output_path = self._resolve_output_dir(output_dir)
+            output_file = output_path / output_name
 
             executor = FFmpegExecutor(log_callback=self._log)
             trimmer = VideoTrimmer(executor)
@@ -867,11 +888,13 @@ class GradioApp:
 
         ss_btn.click(
             fn=self._process_screenshot,
-            inputs=[ss_video, ss_mode, ss_timestamp, ss_interval, ss_format, ss_output],
+            inputs=[ss_video, ss_mode, ss_timestamp, ss_interval, ss_format, ss_output, self.output_dir],
             outputs=[ss_status, ss_log],
         )
 
-    def _process_screenshot(self, video_file, mode, timestamp, interval, image_format, output_name) -> tuple[str, str]:
+    def _process_screenshot(
+        self, video_file, mode, timestamp, interval, image_format, output_name, output_dir
+    ) -> tuple[str, str]:
         """處理影片截圖"""
         self.log_buffer = []
 
@@ -888,11 +911,13 @@ class GradioApp:
             executor = FFmpegExecutor(log_callback=self._log)
             screenshotter = VideoScreenshot(executor)
 
+            output_path = self._resolve_output_dir(output_dir)
+
             if mode == "single":
                 # 確保副檔名正確
                 ext = ".jpg" if image_format.upper() == "JPG" else ".png"
                 output_base = Path(output_name).stem
-                output_file = video_path.parent / f"{output_base}{ext}"
+                output_file = output_path / f"{output_base}{ext}"
 
                 self._log(f"輸入: {video_path.name}")
                 self._log(f"時間點: {timestamp}")
@@ -907,15 +932,15 @@ class GradioApp:
                 success, message = screenshotter.capture(config)
             else:
                 # 批次模式 — 輸出到資料夾
-                output_dir = video_path.parent / f"{video_path.stem}_screenshots"
+                batch_output_dir = output_path / f"{video_path.stem}_screenshots"
 
                 self._log(f"輸入: {video_path.name}")
                 self._log(f"間隔: 每 {int(interval)} 秒")
-                self._log(f"輸出目錄: {output_dir}")
+                self._log(f"輸出目錄: {batch_output_dir}")
 
                 config_batch = BatchScreenshotConfig(
                     input_file=video_path,
-                    output_dir=output_dir,
+                    output_dir=batch_output_dir,
                     interval=int(interval),
                     image_format=image_format,
                 )
@@ -1006,12 +1031,31 @@ class GradioApp:
 
         adj_btn.click(
             fn=self._process_video_adjust,
-            inputs=[adj_video, adj_output, adj_resolution, adj_width, adj_height, adj_rotation, adj_codec, adj_preset],
+            inputs=[
+                adj_video,
+                adj_output,
+                adj_resolution,
+                adj_width,
+                adj_height,
+                adj_rotation,
+                adj_codec,
+                adj_preset,
+                self.output_dir,
+            ],
             outputs=[adj_status, adj_log],
         )
 
     def _process_video_adjust(
-        self, video_file, output_name, resolution, custom_width, custom_height, rotation, codec_choice, preset
+        self,
+        video_file,
+        output_name,
+        resolution,
+        custom_width,
+        custom_height,
+        rotation,
+        codec_choice,
+        preset,
+        output_dir,
     ) -> tuple[str, str]:
         """處理解析度/旋轉調整"""
         self.log_buffer = []
@@ -1046,7 +1090,8 @@ class GradioApp:
             self.processing = True
 
             video_path = Path(video_file)
-            output_file = video_path.parent / output_name
+            output_path = self._resolve_output_dir(output_dir)
+            output_file = output_path / output_name
             encoding = "libx264" if codec_choice == "H.264 (推薦)" else "libx265"
 
             executor = FFmpegExecutor(log_callback=self._log)
@@ -1112,11 +1157,11 @@ class GradioApp:
 
         audio_btn.click(
             fn=self._process_audio_extract,
-            inputs=[audio_video, audio_output, audio_format],
+            inputs=[audio_video, audio_output, audio_format, self.output_dir],
             outputs=[audio_status, audio_log],
         )
 
-    def _process_audio_extract(self, video_file, output_name, audio_format) -> tuple[str, str]:
+    def _process_audio_extract(self, video_file, output_name, audio_format, output_dir) -> tuple[str, str]:
         """處理音訊提取"""
         self.log_buffer = []
 
@@ -1130,14 +1175,15 @@ class GradioApp:
             self.processing = True
 
             video_path = Path(video_file)
+            output_path = self._resolve_output_dir(output_dir)
 
             # 根據格式調整副檔名
             fmt = AUDIO_FORMATS.get(audio_format)
             if fmt:
                 output_base = Path(output_name).stem
-                output_file = video_path.parent / f"{output_base}{fmt['ext']}"
+                output_file = output_path / f"{output_base}{fmt['ext']}"
             else:
-                output_file = video_path.parent / output_name
+                output_file = output_path / output_name
 
             executor = FFmpegExecutor(log_callback=self._log)
             extractor = AudioExtractor(executor)
@@ -1346,6 +1392,7 @@ class GradioApp:
                 outline_width,
                 margin_v,
                 alignment,
+                self.output_dir,
             ],
             outputs=[status_text, log_output],
         )
@@ -1373,6 +1420,7 @@ class GradioApp:
         outline_width: int,
         margin_v: int,
         alignment: int,
+        output_dir: str = "",
     ) -> tuple[str, str]:
         """
         處理字幕燒錄（Gradio 事件處理器）
@@ -1420,8 +1468,9 @@ class GradioApp:
             video_path = Path(video_file)
             subtitle_path = Path(subtitle_file)
 
-            # 決定輸出路徑（與影片同目錄）
-            output_file = video_path.parent / output_name
+            # 決定輸出路徑
+            output_path = self._resolve_output_dir(output_dir)
+            output_file = output_path / output_name
 
             self._log(f"影片檔案: {video_path.name}")
             self._log(f"字幕檔案: {subtitle_path.name}")
