@@ -544,9 +544,9 @@ class GradioApp:
             button_primary_background_fill_hover="linear-gradient(135deg, #00b8d9, #5558e3)",
         )
 
-        with gr.Blocks(title="FFmpeg 字幕工具箱") as demo:
-            gr.Markdown("# 🎬 FFmpeg 字幕工具箱")
-            gr.Markdown("專業級影片字幕燒錄工具 — 簡單、快速、高品質")
+        with gr.Blocks(title="FFmpeg 工具箱") as demo:
+            gr.Markdown("# 🎬 FFmpeg 工具箱")
+            gr.Markdown("專業級影片處理工具 — 轉換、剪輯、字幕、音訊提取")
 
             with gr.Tabs():
                 with gr.Tab("ℹ️ 影片資訊"):

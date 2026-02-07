@@ -1,5 +1,5 @@
 """
-FFmpeg 字幕工具箱 - 主程式進入點
+FFmpeg 工具箱 - 主程式進入點
 
 此模組提供應用程式的主要進入點，啟動 Gradio 網頁介面。
 """
@@ -23,6 +23,7 @@ def main():
         except AttributeError:
             # Python < 3.7 的後備方案
             import io
+
             sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
             sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 
@@ -36,7 +37,7 @@ def main():
         print("  Linux:   sudo apt install ffmpeg (Ubuntu/Debian)")
         sys.exit(1)
 
-    print("🎬 正在啟動 FFmpeg 字幕工具箱...")
+    print("🎬 正在啟動 FFmpeg 工具箱...")
 
     # 建立並啟動 Gradio 應用程式
     app = GradioApp()
