@@ -221,3 +221,23 @@ class TestCodecParams:
         strategy = EncodingStrategy()
         args = strategy.build_preset_args("h264_qsv", preset="medium")
         assert args == ["-preset", "medium"]
+
+
+class TestQsvFallback:
+    """測試 QSV 錯誤偵測"""
+
+    @pytest.mark.parametrize(
+        "error_msg,should_fallback",
+        [
+            ("Error initializing an MFX session", True),
+            ("Error during initialization: qsv", True),
+            ("Selected driver not available", True),
+            ("Unknown encoder 'h264_qsv'", True),
+            ("qsv not available", True),
+            ("Disk full", False),
+            ("Permission denied", False),
+        ],
+    )
+    def test_qsv_should_fallback(self, error_msg, should_fallback):
+        strategy = EncodingStrategy()
+        assert strategy.should_fallback(error_msg) == should_fallback
