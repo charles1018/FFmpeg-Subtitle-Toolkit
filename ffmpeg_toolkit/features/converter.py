@@ -20,6 +20,7 @@ class ConvertConfig:
     encoding: str = "libx264"  # 編碼器
     preset: str = "medium"  # 編碼速度
     crf: int = 23  # 品質 (0-51, 越低越好)
+    hw_accel: str = "auto"  # 硬體加速模式 ("auto"/"nvenc"/"qsv"/"cpu")
 
 
 class VideoConverter:
@@ -39,8 +40,10 @@ class VideoConverter:
         Returns:
             tuple[bool, str]: (成功與否, 訊息)
         """
-        for codec in self.encoding_strategy.get_codecs(config.encoding):
-            codec_args = ["-c:v", codec, "-preset", config.preset, "-crf", str(config.crf)]
+        for codec in self.encoding_strategy.get_codecs(config.encoding, hw_accel=config.hw_accel):
+            quality_args = self.encoding_strategy.build_quality_args(codec, config.crf)
+            preset_args = self.encoding_strategy.build_preset_args(codec, config.preset)
+            codec_args = ["-c:v", codec] + preset_args + quality_args
             command = FFmpegCommand(
                 input_files=[config.input_file],
                 output_file=config.output_file,
