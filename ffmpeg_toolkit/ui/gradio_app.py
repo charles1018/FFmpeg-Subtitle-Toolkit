@@ -12,6 +12,7 @@ import gradio as gr
 
 from ..core.encoding import EncodingStrategy
 from ..core.executor import FFmpegExecutor
+from ..features.media_info import MediaInfoReader
 from ..features.subtitle import SubtitleBurner, SubtitleConfig, SubtitleStyle
 
 
@@ -27,6 +28,7 @@ class GradioApp:
         self.executor: Optional[FFmpegExecutor] = None
         self.encoding_strategy = EncodingStrategy()
         self.subtitle_burner: Optional[SubtitleBurner] = None
+        self.media_info_reader = MediaInfoReader()
         self.log_buffer: list[str] = []
         self.processing = False
         self.should_exit = False
@@ -544,6 +546,9 @@ class GradioApp:
             gr.Markdown("專業級影片字幕燒錄工具 — 簡單、快速、高品質")
 
             with gr.Tabs():
+                with gr.Tab("ℹ️ 影片資訊"):
+                    self._create_media_info_tab()
+
                 with gr.Tab("📝 字幕燒錄"):
                     self._create_subtitle_tab()
 
@@ -553,7 +558,7 @@ class GradioApp:
 
                 with gr.Tab("🔊 音訊處理"):
                     gr.Markdown("### 音訊處理功能")
-                    gr.Markdown("此功能開發中,即將推出")
+                    gr.Markdown("此功能開發中，即將推出")
 
         # 儲存自訂設定供 launch 使用
         demo._custom_theme = custom_theme
@@ -561,6 +566,51 @@ class GradioApp:
         demo._custom_js = browser_close_js
 
         return demo
+
+    def _create_media_info_tab(self):
+        """建立影片資訊分頁"""
+        gr.Markdown("### 📊 影片資訊查看")
+        gr.Markdown("上傳影片檔案，查看詳細的媒體資訊")
+
+        media_file = gr.File(
+            label="選擇媒體檔案",
+            file_types=["video", "audio"],
+            file_count="single",
+        )
+        analyze_btn = gr.Button("🔍 分析檔案", variant="primary", elem_classes="primary")
+        info_output = gr.Textbox(
+            label="媒體資訊",
+            lines=12,
+            max_lines=20,
+            interactive=False,
+        )
+
+        analyze_btn.click(
+            fn=self._analyze_media,
+            inputs=[media_file],
+            outputs=[info_output],
+        )
+
+    def _analyze_media(self, media_file) -> str:
+        """
+        分析媒體檔案資訊
+
+        Args:
+            media_file: Gradio File 對象
+
+        Returns:
+            str: 媒體資訊文字
+        """
+        if media_file is None:
+            return "請先選擇媒體檔案"
+
+        file_path = Path(media_file)
+        success, info, error = self.media_info_reader.read(file_path)
+
+        if not success:
+            return f"分析失敗: {error}"
+
+        return self.media_info_reader.format_info(info)
 
     def _create_subtitle_tab(self):
         """建立字幕燒錄分頁"""

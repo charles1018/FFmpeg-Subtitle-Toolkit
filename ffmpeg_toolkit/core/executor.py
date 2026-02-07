@@ -23,6 +23,7 @@ class FFmpegCommand:
     filter_args: list[str] = field(default_factory=list)
     extra_args: list[str] = field(default_factory=list)
     timeout: int = 3600  # 1 小時超時保護
+    skip_audio_copy: bool = False  # 跳過自動加 -c:a copy
 
 
 class FFmpegExecutor:
@@ -82,6 +83,33 @@ class FFmpegExecutor:
         except Exception as e:
             return False, f"執行錯誤: {str(e)}"
 
+    def execute_raw(self, cmd: list[str], timeout: int = 60) -> tuple[bool, str, str]:
+        """
+        執行原始命令列（不限於 ffmpeg，可用於 ffprobe 等）
+
+        Args:
+            cmd: 命令列參數
+            timeout: 超時時間（秒）
+
+        Returns:
+            tuple[bool, str, str]: (成功與否, stdout, stderr)
+        """
+        self._log(f"執行命令: {' '.join(str(c) for c in cmd)}")
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                encoding="utf-8",
+                errors="replace",
+            )
+            return result.returncode == 0, result.stdout, result.stderr
+        except subprocess.TimeoutExpired:
+            return False, "", f"命令執行超時（{timeout}秒）"
+        except Exception as e:
+            return False, "", f"執行錯誤: {e}"
+
     def _build_command(self, command: FFmpegCommand) -> list[str]:
         """
         建立 FFmpeg 命令列參數
@@ -109,17 +137,16 @@ class FFmpegExecutor:
         if command.filter_args:
             cmd.extend(["-vf", ",".join(command.filter_args)])
 
-        # 音訊複製（不重新編碼）
-        cmd.extend(["-c:a", "copy"])
+        # 音訊複製（不重新編碼）— 除非明確跳過
+        if not command.skip_audio_copy:
+            cmd.extend(["-c:a", "copy"])
 
         # 輸出檔案
         cmd.extend(["-y", str(command.output_file)])  # -y 覆寫現有檔案
 
         return cmd
 
-    def _run_ffmpeg_process(
-        self, cmd: list[str], timeout: int, cwd: Optional[Path]
-    ) -> tuple[int, str]:
+    def _run_ffmpeg_process(self, cmd: list[str], timeout: int, cwd: Optional[Path]) -> tuple[int, str]:
         """
         執行 FFmpeg 程序並監控進度
 
