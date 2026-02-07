@@ -12,6 +12,7 @@ import gradio as gr
 
 from ..core.encoding import EncodingStrategy
 from ..core.executor import FFmpegExecutor
+from ..features.audio_extractor import AUDIO_FORMATS, AudioExtractConfig, AudioExtractor
 from ..features.converter import ConvertConfig, VideoConverter
 from ..features.media_info import MediaInfoReader
 from ..features.subtitle import SubtitleBurner, SubtitleConfig, SubtitleStyle
@@ -560,9 +561,8 @@ class GradioApp:
                 with gr.Tab("✂️ 影片剪輯"):
                     self._create_trimmer_tab()
 
-                with gr.Tab("🔊 音訊處理"):
-                    gr.Markdown("### 音訊處理功能")
-                    gr.Markdown("此功能開發中，即將推出")
+                with gr.Tab("🔊 音訊提取"):
+                    self._create_audio_extractor_tab()
 
         # 儲存自訂設定供 launch 使用
         demo._custom_theme = custom_theme
@@ -799,6 +799,89 @@ class GradioApp:
                 return f"成功: {message}", "\n".join(self.log_buffer)
             else:
                 self._log(f"剪輯失敗: {message}")
+                return f"失敗: {message}", "\n".join(self.log_buffer)
+
+        except Exception as e:
+            self._log(f"錯誤: {e}")
+            return f"錯誤: {e}", "\n".join(self.log_buffer)
+        finally:
+            self.processing = False
+
+    def _create_audio_extractor_tab(self):
+        """建立音訊提取分頁"""
+        gr.Markdown("### 🔊 音訊提取")
+        gr.Markdown("從影片中提取音訊，支援 MP3、AAC、FLAC、WAV 格式")
+
+        with gr.Row():
+            with gr.Column(scale=1):
+                audio_video = gr.File(label="選擇影片檔案", file_types=["video"], file_count="single")
+                audio_output = gr.Textbox(label="輸出檔案名稱", placeholder="audio.mp3", value="audio.mp3")
+
+            with gr.Column(scale=1):
+                audio_format = gr.Radio(
+                    label="輸出格式",
+                    choices=[
+                        ("MP3 (通用)", "MP3"),
+                        ("AAC (高品質)", "AAC"),
+                        ("FLAC (無損)", "FLAC"),
+                        ("WAV (無壓縮)", "WAV"),
+                    ],
+                    value="MP3",
+                )
+
+        audio_btn = gr.Button("🔊 開始提取", variant="primary", elem_classes="primary")
+        audio_status = gr.Textbox(label="狀態", value="就緒", interactive=False)
+        audio_log = gr.Textbox(label="📋 處理日誌", lines=10, max_lines=15, interactive=False, autoscroll=True)
+
+        audio_btn.click(
+            fn=self._process_audio_extract,
+            inputs=[audio_video, audio_output, audio_format],
+            outputs=[audio_status, audio_log],
+        )
+
+    def _process_audio_extract(self, video_file, output_name, audio_format) -> tuple[str, str]:
+        """處理音訊提取"""
+        self.log_buffer = []
+
+        if video_file is None:
+            return "請選擇影片檔案", ""
+
+        if self.processing:
+            return "已有處理任務執行中", ""
+
+        try:
+            self.processing = True
+
+            video_path = Path(video_file)
+
+            # 根據格式調整副檔名
+            fmt = AUDIO_FORMATS.get(audio_format)
+            if fmt:
+                output_base = Path(output_name).stem
+                output_file = video_path.parent / f"{output_base}{fmt['ext']}"
+            else:
+                output_file = video_path.parent / output_name
+
+            executor = FFmpegExecutor(log_callback=self._log)
+            extractor = AudioExtractor(executor)
+
+            self._log(f"輸入: {video_path.name}")
+            self._log(f"輸出: {output_file}")
+            self._log(f"格式: {audio_format}")
+
+            config = AudioExtractConfig(
+                input_file=video_path,
+                output_file=output_file,
+                audio_format=audio_format,
+            )
+
+            success, message = extractor.extract(config)
+
+            if success:
+                self._log("音訊提取完成!")
+                return f"成功: {message}", "\n".join(self.log_buffer)
+            else:
+                self._log(f"提取失敗: {message}")
                 return f"失敗: {message}", "\n".join(self.log_buffer)
 
         except Exception as e:
