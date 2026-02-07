@@ -15,6 +15,7 @@ from ..core.executor import FFmpegExecutor
 from ..features.converter import ConvertConfig, VideoConverter
 from ..features.media_info import MediaInfoReader
 from ..features.subtitle import SubtitleBurner, SubtitleConfig, SubtitleStyle
+from ..features.trimmer import TrimConfig, VideoTrimmer
 
 
 class GradioApp:
@@ -557,8 +558,7 @@ class GradioApp:
                     self._create_subtitle_tab()
 
                 with gr.Tab("✂️ 影片剪輯"):
-                    gr.Markdown("### 影片剪輯功能")
-                    gr.Markdown("此功能開發中，即將推出")
+                    self._create_trimmer_tab()
 
                 with gr.Tab("🔊 音訊處理"):
                     gr.Markdown("### 音訊處理功能")
@@ -714,6 +714,91 @@ class GradioApp:
                 return f"成功: {message}", "\n".join(self.log_buffer)
             else:
                 self._log(f"轉換失敗: {message}")
+                return f"失敗: {message}", "\n".join(self.log_buffer)
+
+        except Exception as e:
+            self._log(f"錯誤: {e}")
+            return f"錯誤: {e}", "\n".join(self.log_buffer)
+        finally:
+            self.processing = False
+
+    def _create_trimmer_tab(self):
+        """建立影片剪輯分頁"""
+        gr.Markdown("### ✂️ 影片剪輯")
+        gr.Markdown("指定起止時間裁切影片片段")
+
+        with gr.Row():
+            with gr.Column(scale=1):
+                trim_video = gr.File(label="選擇影片檔案", file_types=["video"], file_count="single")
+                trim_output = gr.Textbox(label="輸出檔案名稱", placeholder="trimmed.mp4", value="trimmed.mp4")
+
+            with gr.Column(scale=1):
+                trim_start = gr.Textbox(
+                    label="開始時間", placeholder="00:00:00", value="00:00:00", info="格式: HH:MM:SS 或秒數"
+                )
+                trim_end = gr.Textbox(label="結束時間", placeholder="00:01:00", value="", info="留空表示到影片結尾")
+                trim_copy = gr.Checkbox(
+                    label="快速模式（不重編碼）",
+                    value=True,
+                    info="勾選速度極快但剪輯點可能不精確，取消勾選則精確但較慢",
+                )
+
+        trim_btn = gr.Button("✂️ 開始剪輯", variant="primary", elem_classes="primary")
+        trim_status = gr.Textbox(label="狀態", value="就緒", interactive=False)
+        trim_log = gr.Textbox(label="📋 處理日誌", lines=10, max_lines=15, interactive=False, autoscroll=True)
+
+        trim_btn.click(
+            fn=self._process_trim,
+            inputs=[trim_video, trim_output, trim_start, trim_end, trim_copy],
+            outputs=[trim_status, trim_log],
+        )
+
+    def _process_trim(self, video_file, output_name, start_time, end_time, copy_mode) -> tuple[str, str]:
+        """處理影片剪輯"""
+        self.log_buffer = []
+
+        if video_file is None:
+            return "請選擇影片檔案", ""
+
+        if self.processing:
+            return "已有處理任務執行中", ""
+
+        if not VideoTrimmer.validate_time_format(start_time):
+            return f"開始時間格式錯誤: {start_time}", ""
+
+        if not VideoTrimmer.validate_time_format(end_time):
+            return f"結束時間格式錯誤: {end_time}", ""
+
+        try:
+            self.processing = True
+
+            video_path = Path(video_file)
+            output_file = video_path.parent / output_name
+
+            executor = FFmpegExecutor(log_callback=self._log)
+            trimmer = VideoTrimmer(executor)
+
+            mode_text = "快速模式 (copy)" if copy_mode else "精確模式 (重編碼)"
+            self._log(f"輸入: {video_path.name}")
+            self._log(f"輸出: {output_file}")
+            self._log(f"時間: {start_time} → {end_time or '結尾'}")
+            self._log(f"模式: {mode_text}")
+
+            config = TrimConfig(
+                input_file=video_path,
+                output_file=output_file,
+                start_time=start_time,
+                end_time=end_time,
+                copy_mode=copy_mode,
+            )
+
+            success, message = trimmer.trim(config)
+
+            if success:
+                self._log("剪輯完成!")
+                return f"成功: {message}", "\n".join(self.log_buffer)
+            else:
+                self._log(f"剪輯失敗: {message}")
                 return f"失敗: {message}", "\n".join(self.log_buffer)
 
         except Exception as e:
