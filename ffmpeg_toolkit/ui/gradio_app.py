@@ -32,6 +32,7 @@ class GradioApp:
         """初始化 Gradio 應用程式"""
         self.executor: Optional[FFmpegExecutor] = None
         self.encoding_strategy = EncodingStrategy()
+        self._hw_accelerators = self.encoding_strategy.get_available_hw_accelerators()
         self.subtitle_burner: Optional[SubtitleBurner] = None
         self.media_info_reader = MediaInfoReader()
         self.log_buffer: list[str] = []
@@ -681,38 +682,82 @@ class GradioApp:
         with gr.Row():
             with gr.Column(scale=1):
                 conv_video = gr.File(label="選擇影片檔案", file_types=["video"], file_count="single")
-                conv_output = gr.Textbox(label="輸出檔案名稱", placeholder="output.mp4", value="converted.mp4")
+                conv_output = gr.Textbox(
+                    label="輸出檔案名稱",
+                    placeholder="上傳影片後自動產生",
+                    value="",
+                    info="上傳影片後自動填入，也可手動修改",
+                )
 
             with gr.Column(scale=1):
-                conv_format = gr.Dropdown(
+                conv_format = gr.Radio(
                     label="輸出格式",
-                    choices=["MP4", "MKV", "AVI", "MOV", "WebM"],
+                    choices=[
+                        ("MP4 (最通用)", "MP4"),
+                        ("MKV (高相容性)", "MKV"),
+                        ("AVI", "AVI"),
+                        ("MOV (Apple)", "MOV"),
+                        ("WebM (網頁)", "WebM"),
+                    ],
                     value="MP4",
-                    info="選擇輸出容器格式",
                 )
-                conv_codec = gr.Dropdown(
+                conv_codec = gr.Radio(
                     label="編碼器",
-                    choices=["H.264 (推薦)", "H.265 (高壓縮率)"],
-                    value="H.264 (推薦)",
+                    choices=[("H.264 (推薦)", "H.264"), ("H.265 (高壓縮率)", "H.265")],
+                    value="H.264",
+                )
+                # 動態建構硬體加速選項
+                hw_choices = [("自動（優先 GPU）", "auto"), ("CPU（軟體編碼）", "cpu")]
+                for label, accel_id in self._hw_accelerators:
+                    hw_choices.append((label, accel_id))
+
+                conv_hw_accel = gr.Radio(
+                    label="硬體加速",
+                    choices=hw_choices,
+                    value="auto",
+                    info="自動模式會嘗試 GPU 加速，失敗自動回退 CPU",
+                )
+                conv_quality = gr.Radio(
+                    label="畫質",
+                    choices=[
+                        ("省空間", 28),
+                        ("標準 (推薦)", 23),
+                        ("高品質", 18),
+                        ("最高品質", 15),
+                    ],
+                    value=23,
                 )
                 conv_preset = gr.Dropdown(
                     label="編碼速度",
                     choices=[
-                        "ultrafast",
-                        "superfast",
-                        "veryfast",
-                        "faster",
-                        "fast",
-                        "medium",
-                        "slow",
-                        "slower",
-                        "veryslow",
+                        ("快速（省時間）", "fast"),
+                        ("平衡 (推薦)", "medium"),
+                        ("高品質（較慢）", "slow"),
                     ],
                     value="medium",
                 )
-                conv_crf = gr.Slider(
-                    label="品質 (CRF)", minimum=0, maximum=51, value=23, step=1, info="越低品質越好，23 為預設平衡值"
-                )
+
+        # 格式 → 副檔名對應表
+        format_ext_map = {"MP4": ".mp4", "MKV": ".mkv", "AVI": ".avi", "MOV": ".mov", "WebM": ".webm"}
+
+        def on_video_upload(video_file, current_format):
+            """上傳影片後自動產生輸出檔名"""
+            if video_file is None:
+                return ""
+            stem = Path(video_file).stem
+            ext = format_ext_map.get(current_format, ".mp4")
+            return f"{stem}_converted{ext}"
+
+        def on_format_change(new_format, current_output):
+            """切換格式時自動更新副檔名"""
+            if not current_output:
+                return ""
+            stem = Path(current_output).stem
+            ext = format_ext_map.get(new_format, ".mp4")
+            return f"{stem}{ext}"
+
+        conv_video.change(fn=on_video_upload, inputs=[conv_video, conv_format], outputs=[conv_output])
+        conv_format.change(fn=on_format_change, inputs=[conv_format, conv_output], outputs=[conv_output])
 
         conv_btn = gr.Button("🚀 開始轉換", variant="primary", elem_classes="primary")
         conv_status = gr.Textbox(label="狀態", value="就緒", interactive=False)
@@ -720,12 +765,12 @@ class GradioApp:
 
         conv_btn.click(
             fn=self._process_convert,
-            inputs=[conv_video, conv_output, conv_format, conv_codec, conv_preset, conv_crf, self.output_dir],
+            inputs=[conv_video, conv_output, conv_format, conv_codec, conv_preset, conv_quality, conv_hw_accel, self.output_dir],
             outputs=[conv_status, conv_log],
         )
 
     def _process_convert(
-        self, video_file, output_name, output_format, codec_choice, preset, crf, output_dir
+        self, video_file, output_name, output_format, codec_choice, preset, quality, hw_accel, output_dir
     ) -> tuple[str, str]:
         """處理影片轉換"""
         self.log_buffer = []
@@ -745,26 +790,33 @@ class GradioApp:
             format_ext = {"MP4": ".mp4", "MKV": ".mkv", "AVI": ".avi", "MOV": ".mov", "WebM": ".webm"}
             ext = format_ext.get(output_format, ".mp4")
 
+            # 自動產生輸出檔名（若使用者未填寫）
+            if not output_name or not output_name.strip():
+                output_name = f"{video_path.stem}_converted{ext}"
+
             # 確保輸出副檔名正確
             output_base = Path(output_name).stem
             output_path = self._resolve_output_dir(output_dir)
             output_file = output_path / f"{output_base}{ext}"
 
-            encoding = "libx264" if codec_choice == "H.264 (推薦)" else "libx265"
+            encoding = "libx264" if codec_choice == "H.264" else "libx265"
 
             executor = FFmpegExecutor(log_callback=self._log)
             converter = VideoConverter(executor, self.encoding_strategy)
 
             self._log(f"輸入: {video_path.name}")
             self._log(f"輸出: {output_file}")
-            self._log(f"編碼: {encoding} | 速度: {preset} | CRF: {crf}")
+            crf = int(quality) if quality else 23
+            hw_label = {"auto": "自動", "cpu": "CPU", "nvenc": "NVIDIA NVENC", "qsv": "Intel QSV"}.get(hw_accel, hw_accel)
+            self._log(f"編碼: {encoding} | 加速: {hw_label} | 速度: {preset} | 品質: {crf}")
 
             config = ConvertConfig(
                 input_file=video_path,
                 output_file=output_file,
                 encoding=encoding,
                 preset=preset,
-                crf=int(crf),
+                crf=crf,
+                hw_accel=hw_accel or "auto",
             )
 
             success, message = converter.convert(config)
