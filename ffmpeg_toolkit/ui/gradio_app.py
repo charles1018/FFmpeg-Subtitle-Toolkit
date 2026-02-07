@@ -15,6 +15,7 @@ from ..core.executor import FFmpegExecutor
 from ..features.audio_extractor import AUDIO_FORMATS, AudioExtractConfig, AudioExtractor
 from ..features.converter import ConvertConfig, VideoConverter
 from ..features.media_info import MediaInfoReader
+from ..features.screenshot import BatchScreenshotConfig, ScreenshotConfig, VideoScreenshot
 from ..features.subtitle import SubtitleBurner, SubtitleConfig, SubtitleStyle
 from ..features.trimmer import TrimConfig, VideoTrimmer
 
@@ -561,6 +562,9 @@ class GradioApp:
                 with gr.Tab("✂️ 影片剪輯"):
                     self._create_trimmer_tab()
 
+                with gr.Tab("📸 影片截圖"):
+                    self._create_screenshot_tab()
+
                 with gr.Tab("🔊 音訊提取"):
                     self._create_audio_extractor_tab()
 
@@ -799,6 +803,125 @@ class GradioApp:
                 return f"成功: {message}", "\n".join(self.log_buffer)
             else:
                 self._log(f"剪輯失敗: {message}")
+                return f"失敗: {message}", "\n".join(self.log_buffer)
+
+        except Exception as e:
+            self._log(f"錯誤: {e}")
+            return f"錯誤: {e}", "\n".join(self.log_buffer)
+        finally:
+            self.processing = False
+
+    def _create_screenshot_tab(self):
+        """建立影片截圖分頁"""
+        gr.Markdown("### 📸 影片截圖")
+        gr.Markdown("從影片中擷取單張或批次截圖")
+
+        with gr.Row():
+            with gr.Column(scale=1):
+                ss_video = gr.File(label="選擇影片檔案", file_types=["video"], file_count="single")
+                ss_mode = gr.Radio(
+                    label="截圖模式",
+                    choices=[("單張截圖", "single"), ("批次截圖", "batch")],
+                    value="single",
+                )
+
+            with gr.Column(scale=1):
+                ss_timestamp = gr.Textbox(
+                    label="時間點",
+                    placeholder="00:01:30",
+                    value="00:00:00",
+                    info="格式: HH:MM:SS 或秒數（單張模式使用）",
+                )
+                ss_interval = gr.Slider(
+                    label="截圖間隔（秒）",
+                    minimum=1,
+                    maximum=60,
+                    value=10,
+                    step=1,
+                    info="每隔 N 秒截取一張（批次模式使用）",
+                    visible=False,
+                )
+                ss_format = gr.Radio(
+                    label="圖片格式",
+                    choices=["PNG", "JPG"],
+                    value="PNG",
+                )
+                ss_output = gr.Textbox(label="輸出檔案名稱", placeholder="screenshot.png", value="screenshot.png")
+
+        # 模式切換控制元件顯示
+        def toggle_screenshot_mode(mode):
+            if mode == "single":
+                return gr.Textbox(visible=True), gr.Slider(visible=False)
+            else:
+                return gr.Textbox(visible=False), gr.Slider(visible=True)
+
+        ss_mode.change(fn=toggle_screenshot_mode, inputs=[ss_mode], outputs=[ss_timestamp, ss_interval])
+
+        ss_btn = gr.Button("📸 開始截圖", variant="primary", elem_classes="primary")
+        ss_status = gr.Textbox(label="狀態", value="就緒", interactive=False)
+        ss_log = gr.Textbox(label="📋 處理日誌", lines=10, max_lines=15, interactive=False, autoscroll=True)
+
+        ss_btn.click(
+            fn=self._process_screenshot,
+            inputs=[ss_video, ss_mode, ss_timestamp, ss_interval, ss_format, ss_output],
+            outputs=[ss_status, ss_log],
+        )
+
+    def _process_screenshot(self, video_file, mode, timestamp, interval, image_format, output_name) -> tuple[str, str]:
+        """處理影片截圖"""
+        self.log_buffer = []
+
+        if video_file is None:
+            return "請選擇影片檔案", ""
+
+        if self.processing:
+            return "已有處理任務執行中", ""
+
+        try:
+            self.processing = True
+
+            video_path = Path(video_file)
+            executor = FFmpegExecutor(log_callback=self._log)
+            screenshotter = VideoScreenshot(executor)
+
+            if mode == "single":
+                # 確保副檔名正確
+                ext = ".jpg" if image_format.upper() == "JPG" else ".png"
+                output_base = Path(output_name).stem
+                output_file = video_path.parent / f"{output_base}{ext}"
+
+                self._log(f"輸入: {video_path.name}")
+                self._log(f"時間點: {timestamp}")
+                self._log(f"輸出: {output_file}")
+
+                config = ScreenshotConfig(
+                    input_file=video_path,
+                    output_file=output_file,
+                    timestamp=timestamp,
+                    image_format=image_format,
+                )
+                success, message = screenshotter.capture(config)
+            else:
+                # 批次模式 — 輸出到資料夾
+                output_dir = video_path.parent / f"{video_path.stem}_screenshots"
+
+                self._log(f"輸入: {video_path.name}")
+                self._log(f"間隔: 每 {int(interval)} 秒")
+                self._log(f"輸出目錄: {output_dir}")
+
+                config_batch = BatchScreenshotConfig(
+                    input_file=video_path,
+                    output_dir=output_dir,
+                    interval=int(interval),
+                    image_format=image_format,
+                )
+                success, message = screenshotter.capture_batch(config_batch)
+
+            if success:
+                self._log("截圖完成!")
+                return f"成功: {message}", "\n".join(self.log_buffer)
+            else:
+                self._log(f"截圖失敗: {message}")
                 return f"失敗: {message}", "\n".join(self.log_buffer)
 
         except Exception as e:
