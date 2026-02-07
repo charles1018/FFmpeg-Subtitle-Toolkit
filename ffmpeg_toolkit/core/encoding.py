@@ -44,6 +44,19 @@ class EncodingStrategy:
         "qsv": {"label": "Intel QSV", "h264": "h264_qsv", "hevc": "hevc_qsv"},
     }
 
+    # 品質參數映射
+    QUALITY_MAP = {
+        "cpu": lambda q: ["-crf", str(q)],
+        "nvenc": lambda q: ["-rc", "vbr", "-cq", str(q)],
+        "qsv": lambda q: ["-global_quality", str(q)],
+    }
+
+    # 預設值映射
+    PRESET_MAP = {
+        "nvenc": {"fast": "p4", "medium": "p5", "slow": "p7"},
+        "qsv": {"fast": "veryfast", "medium": "medium", "slow": "veryslow"},
+    }
+
     def __init__(self):
         """初始化編碼策略"""
         # 編譯錯誤模式正則表達式（結合 NVENC 和 QSV 模式）
@@ -83,6 +96,44 @@ class EncodingStrategy:
             nvenc_info = self.HW_ACCELERATORS["nvenc"]
             yield nvenc_info[codec_key]
             yield cpu_codec
+
+    def _get_encoder_family(self, codec: str) -> str:
+        """判斷編碼器所屬的硬體家族"""
+        if "nvenc" in codec:
+            return "nvenc"
+        elif "qsv" in codec:
+            return "qsv"
+        return "cpu"
+
+    def build_quality_args(self, codec: str, quality: int) -> list[str]:
+        """
+        根據編碼器建立品質參數
+
+        Args:
+            codec: 編碼器名稱
+            quality: 品質值
+
+        Returns:
+            list[str]: FFmpeg 品質參數列表
+        """
+        family = self._get_encoder_family(codec)
+        builder = self.QUALITY_MAP.get(family, self.QUALITY_MAP["cpu"])
+        return builder(quality)
+
+    def build_preset_args(self, codec: str, preset: str) -> list[str]:
+        """
+        根據編碼器建立預設值參數
+
+        Args:
+            codec: 編碼器名稱
+            preset: 預設值名稱
+
+        Returns:
+            list[str]: FFmpeg 預設值參數列表
+        """
+        family = self._get_encoder_family(codec)
+        mapped = self.PRESET_MAP.get(family, {}).get(preset, preset)
+        return ["-preset", mapped]
 
     def should_fallback(self, error_message: str) -> bool:
         """

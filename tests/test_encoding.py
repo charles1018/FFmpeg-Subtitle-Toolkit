@@ -186,3 +186,38 @@ class TestGetCodecsWithHwAccel:
         codecs_default = list(strategy.get_codecs("libx264"))
         codecs_auto = list(strategy.get_codecs("libx264", hw_accel="auto"))
         assert codecs_default == codecs_auto
+
+
+class TestCodecParams:
+    """測試不同編碼器的參數映射"""
+
+    def test_cpu_quality_args(self):
+        strategy = EncodingStrategy()
+        args = strategy.build_quality_args("libx264", quality=23)
+        assert args == ["-crf", "23"]
+
+    def test_nvenc_quality_args(self):
+        strategy = EncodingStrategy()
+        args = strategy.build_quality_args("h264_nvenc", quality=23)
+        assert "-cq" in args
+        assert "-rc" in args
+
+    def test_qsv_quality_args(self):
+        strategy = EncodingStrategy()
+        args = strategy.build_quality_args("h264_qsv", quality=23)
+        assert "-global_quality" in args
+
+    def test_cpu_preset_args(self):
+        strategy = EncodingStrategy()
+        args = strategy.build_preset_args("libx264", preset="medium")
+        assert args == ["-preset", "medium"]
+
+    def test_nvenc_preset_args(self):
+        strategy = EncodingStrategy()
+        args = strategy.build_preset_args("h264_nvenc", preset="medium")
+        assert args == ["-preset", "p5"]
+
+    def test_qsv_preset_args(self):
+        strategy = EncodingStrategy()
+        args = strategy.build_preset_args("h264_qsv", preset="medium")
+        assert args == ["-preset", "medium"]
