@@ -12,6 +12,7 @@ import gradio as gr
 
 from ..core.encoding import EncodingStrategy
 from ..core.executor import FFmpegExecutor
+from ..features.converter import ConvertConfig, VideoConverter
 from ..features.media_info import MediaInfoReader
 from ..features.subtitle import SubtitleBurner, SubtitleConfig, SubtitleStyle
 
@@ -549,6 +550,9 @@ class GradioApp:
                 with gr.Tab("ℹ️ 影片資訊"):
                     self._create_media_info_tab()
 
+                with gr.Tab("🔄 影片轉換"):
+                    self._create_converter_tab()
+
                 with gr.Tab("📝 字幕燒錄"):
                     self._create_subtitle_tab()
 
@@ -611,6 +615,112 @@ class GradioApp:
             return f"分析失敗: {error}"
 
         return self.media_info_reader.format_info(info)
+
+    def _create_converter_tab(self):
+        """建立影片轉換分頁"""
+        gr.Markdown("### 🔄 影片格式/編碼轉換")
+        gr.Markdown("支援格式轉換（MP4/MKV/AVI/MOV/WebM）和編碼轉換（H.264/H.265）")
+
+        with gr.Row():
+            with gr.Column(scale=1):
+                conv_video = gr.File(label="選擇影片檔案", file_types=["video"], file_count="single")
+                conv_output = gr.Textbox(label="輸出檔案名稱", placeholder="output.mp4", value="converted.mp4")
+
+            with gr.Column(scale=1):
+                conv_format = gr.Dropdown(
+                    label="輸出格式",
+                    choices=["MP4", "MKV", "AVI", "MOV", "WebM"],
+                    value="MP4",
+                    info="選擇輸出容器格式",
+                )
+                conv_codec = gr.Dropdown(
+                    label="編碼器",
+                    choices=["H.264 (推薦)", "H.265 (高壓縮率)"],
+                    value="H.264 (推薦)",
+                )
+                conv_preset = gr.Dropdown(
+                    label="編碼速度",
+                    choices=[
+                        "ultrafast",
+                        "superfast",
+                        "veryfast",
+                        "faster",
+                        "fast",
+                        "medium",
+                        "slow",
+                        "slower",
+                        "veryslow",
+                    ],
+                    value="medium",
+                )
+                conv_crf = gr.Slider(
+                    label="品質 (CRF)", minimum=0, maximum=51, value=23, step=1, info="越低品質越好，23 為預設平衡值"
+                )
+
+        conv_btn = gr.Button("🚀 開始轉換", variant="primary", elem_classes="primary")
+        conv_status = gr.Textbox(label="狀態", value="就緒", interactive=False)
+        conv_log = gr.Textbox(label="📋 處理日誌", lines=10, max_lines=15, interactive=False, autoscroll=True)
+
+        conv_btn.click(
+            fn=self._process_convert,
+            inputs=[conv_video, conv_output, conv_format, conv_codec, conv_preset, conv_crf],
+            outputs=[conv_status, conv_log],
+        )
+
+    def _process_convert(self, video_file, output_name, output_format, codec_choice, preset, crf) -> tuple[str, str]:
+        """處理影片轉換"""
+        self.log_buffer = []
+
+        if video_file is None:
+            return "請選擇影片檔案", ""
+
+        if self.processing:
+            return "已有處理任務執行中", ""
+
+        try:
+            self.processing = True
+
+            video_path = Path(video_file)
+
+            # 根據格式調整副檔名
+            format_ext = {"MP4": ".mp4", "MKV": ".mkv", "AVI": ".avi", "MOV": ".mov", "WebM": ".webm"}
+            ext = format_ext.get(output_format, ".mp4")
+
+            # 確保輸出副檔名正確
+            output_base = Path(output_name).stem
+            output_file = video_path.parent / f"{output_base}{ext}"
+
+            encoding = "libx264" if codec_choice == "H.264 (推薦)" else "libx265"
+
+            executor = FFmpegExecutor(log_callback=self._log)
+            converter = VideoConverter(executor, self.encoding_strategy)
+
+            self._log(f"輸入: {video_path.name}")
+            self._log(f"輸出: {output_file}")
+            self._log(f"編碼: {encoding} | 速度: {preset} | CRF: {crf}")
+
+            config = ConvertConfig(
+                input_file=video_path,
+                output_file=output_file,
+                encoding=encoding,
+                preset=preset,
+                crf=int(crf),
+            )
+
+            success, message = converter.convert(config)
+
+            if success:
+                self._log("轉換完成!")
+                return f"成功: {message}", "\n".join(self.log_buffer)
+            else:
+                self._log(f"轉換失敗: {message}")
+                return f"失敗: {message}", "\n".join(self.log_buffer)
+
+        except Exception as e:
+            self._log(f"錯誤: {e}")
+            return f"錯誤: {e}", "\n".join(self.log_buffer)
+        finally:
+            self.processing = False
 
     def _create_subtitle_tab(self):
         """建立字幕燒錄分頁"""
