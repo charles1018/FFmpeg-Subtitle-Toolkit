@@ -18,6 +18,7 @@ from ..features.media_info import MediaInfoReader
 from ..features.screenshot import BatchScreenshotConfig, ScreenshotConfig, VideoScreenshot
 from ..features.subtitle import SubtitleBurner, SubtitleConfig, SubtitleStyle
 from ..features.trimmer import TrimConfig, VideoTrimmer
+from ..features.video_adjust import AdjustConfig, VideoAdjuster
 
 
 class GradioApp:
@@ -565,6 +566,9 @@ class GradioApp:
                 with gr.Tab("📸 影片截圖"):
                     self._create_screenshot_tab()
 
+                with gr.Tab("📐 解析度/旋轉"):
+                    self._create_video_adjust_tab()
+
                 with gr.Tab("🔊 音訊提取"):
                     self._create_audio_extractor_tab()
 
@@ -922,6 +926,156 @@ class GradioApp:
                 return f"成功: {message}", "\n".join(self.log_buffer)
             else:
                 self._log(f"截圖失敗: {message}")
+                return f"失敗: {message}", "\n".join(self.log_buffer)
+
+        except Exception as e:
+            self._log(f"錯誤: {e}")
+            return f"錯誤: {e}", "\n".join(self.log_buffer)
+        finally:
+            self.processing = False
+
+    def _create_video_adjust_tab(self):
+        """建立解析度/旋轉調整分頁"""
+        gr.Markdown("### 📐 解析度與旋轉調整")
+        gr.Markdown("縮放影片解析度或旋轉影片方向")
+
+        with gr.Row():
+            with gr.Column(scale=1):
+                adj_video = gr.File(label="選擇影片檔案", file_types=["video"], file_count="single")
+                adj_output = gr.Textbox(label="輸出檔案名稱", placeholder="adjusted.mp4", value="adjusted.mp4")
+
+            with gr.Column(scale=1):
+                adj_resolution = gr.Radio(
+                    label="解析度",
+                    choices=[
+                        ("原始（不縮放）", "original"),
+                        ("1080p (1920x1080)", "1080p"),
+                        ("720p (1280x720)", "720p"),
+                        ("480p (854x480)", "480p"),
+                        ("自訂", "custom"),
+                    ],
+                    value="original",
+                )
+
+                with gr.Row():
+                    adj_width = gr.Number(label="寬度", value=1280, visible=False, precision=0)
+                    adj_height = gr.Number(label="高度（-1 自動等比例）", value=-1, visible=False, precision=0)
+
+                adj_rotation = gr.Radio(
+                    label="旋轉",
+                    choices=[
+                        ("不旋轉", "0"),
+                        ("順時針 90°", "90"),
+                        ("180°", "180"),
+                        ("逆時針 90°", "270"),
+                    ],
+                    value="0",
+                )
+
+                adj_codec = gr.Dropdown(
+                    label="編碼器",
+                    choices=["H.264 (推薦)", "H.265 (高壓縮率)"],
+                    value="H.264 (推薦)",
+                )
+                adj_preset = gr.Dropdown(
+                    label="編碼速度",
+                    choices=[
+                        "ultrafast",
+                        "superfast",
+                        "veryfast",
+                        "faster",
+                        "fast",
+                        "medium",
+                        "slow",
+                        "slower",
+                        "veryslow",
+                    ],
+                    value="medium",
+                )
+
+        # 解析度切換顯示自訂欄位
+        def toggle_custom_resolution(choice):
+            visible = choice == "custom"
+            return gr.Number(visible=visible), gr.Number(visible=visible)
+
+        adj_resolution.change(fn=toggle_custom_resolution, inputs=[adj_resolution], outputs=[adj_width, adj_height])
+
+        adj_btn = gr.Button("📐 開始調整", variant="primary", elem_classes="primary")
+        adj_status = gr.Textbox(label="狀態", value="就緒", interactive=False)
+        adj_log = gr.Textbox(label="📋 處理日誌", lines=10, max_lines=15, interactive=False, autoscroll=True)
+
+        adj_btn.click(
+            fn=self._process_video_adjust,
+            inputs=[adj_video, adj_output, adj_resolution, adj_width, adj_height, adj_rotation, adj_codec, adj_preset],
+            outputs=[adj_status, adj_log],
+        )
+
+    def _process_video_adjust(
+        self, video_file, output_name, resolution, custom_width, custom_height, rotation, codec_choice, preset
+    ) -> tuple[str, str]:
+        """處理解析度/旋轉調整"""
+        self.log_buffer = []
+
+        if video_file is None:
+            return "請選擇影片檔案", ""
+
+        if self.processing:
+            return "已有處理任務執行中", ""
+
+        # 解析解析度
+        resolution_map = {
+            "1080p": (1920, 1080),
+            "720p": (1280, 720),
+            "480p": (854, 480),
+        }
+
+        width = None
+        height = None
+        if resolution == "custom":
+            width = int(custom_width) if custom_width else None
+            height = int(custom_height) if custom_height else -1
+        elif resolution in resolution_map:
+            width, height = resolution_map[resolution]
+
+        rotation_deg = int(rotation)
+
+        if width is None and rotation_deg == 0:
+            return "請選擇解析度或旋轉角度", ""
+
+        try:
+            self.processing = True
+
+            video_path = Path(video_file)
+            output_file = video_path.parent / output_name
+            encoding = "libx264" if codec_choice == "H.264 (推薦)" else "libx265"
+
+            executor = FFmpegExecutor(log_callback=self._log)
+            adjuster = VideoAdjuster(executor, self.encoding_strategy)
+
+            self._log(f"輸入: {video_path.name}")
+            self._log(f"輸出: {output_file}")
+            if width is not None:
+                self._log(f"解析度: {width}x{height}")
+            if rotation_deg != 0:
+                self._log(f"旋轉: {rotation_deg}°")
+
+            config = AdjustConfig(
+                input_file=video_path,
+                output_file=output_file,
+                width=width,
+                height=height,
+                rotation=rotation_deg,
+                encoding=encoding,
+                preset=preset,
+            )
+
+            success, message = adjuster.adjust(config)
+
+            if success:
+                self._log("調整完成!")
+                return f"成功: {message}", "\n".join(self.log_buffer)
+            else:
+                self._log(f"調整失敗: {message}")
                 return f"失敗: {message}", "\n".join(self.log_buffer)
 
         except Exception as e:
