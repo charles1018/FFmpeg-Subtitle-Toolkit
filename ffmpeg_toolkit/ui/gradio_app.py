@@ -98,6 +98,27 @@ class GradioApp:
         ]
         return sorted(common_fonts)
 
+    @staticmethod
+    def _browse_directory(current_dir: str) -> str:
+        """開啟原生資料夾選擇對話框"""
+        import tkinter as tk
+        from tkinter import filedialog
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+
+        initial_dir = current_dir if current_dir and Path(current_dir).is_dir() else str(Path.home() / "Documents")
+
+        selected = filedialog.askdirectory(
+            title="選擇輸出目錄",
+            initialdir=initial_dir,
+        )
+
+        root.destroy()
+
+        return selected if selected else current_dir
+
     def _shutdown_app(self) -> str:
         """
         關閉應用程式
@@ -580,9 +601,16 @@ class GradioApp:
                 self.output_dir = gr.Textbox(
                     label="📁 輸出目錄",
                     value=str(Path.home() / "Documents"),
-                    info="所有處理後的檔案將儲存到此目錄",
+                    info="所有處理後的檔案將儲存到此目錄（可手動輸入或點擊「瀏覽」選擇）",
                     interactive=True,
                     scale=4,
+                )
+                browse_btn = gr.Button(
+                    "📂 選擇資料夾",
+                    variant="secondary",
+                    size="lg",
+                    scale=1,
+                    min_width=100,
                 )
                 shutdown_btn = gr.Button(
                     "⏹️ 關閉程式",
@@ -613,6 +641,13 @@ class GradioApp:
 
                 with gr.Tab("🔊 音訊提取"):
                     self._create_audio_extractor_tab()
+
+            # 綁定瀏覽目錄按鈕
+            browse_btn.click(
+                fn=self._browse_directory,
+                inputs=[self.output_dir],
+                outputs=[self.output_dir],
+            )
 
             # 綁定全域關閉事件
             shutdown_status = gr.Textbox(visible=False)
@@ -765,7 +800,16 @@ class GradioApp:
 
         conv_btn.click(
             fn=self._process_convert,
-            inputs=[conv_video, conv_output, conv_format, conv_codec, conv_preset, conv_quality, conv_hw_accel, self.output_dir],
+            inputs=[
+                conv_video,
+                conv_output,
+                conv_format,
+                conv_codec,
+                conv_preset,
+                conv_quality,
+                conv_hw_accel,
+                self.output_dir,
+            ],
             outputs=[conv_status, conv_log],
         )
 
@@ -807,7 +851,9 @@ class GradioApp:
             self._log(f"輸入: {video_path.name}")
             self._log(f"輸出: {output_file}")
             crf = int(quality) if quality else 23
-            hw_label = {"auto": "自動", "cpu": "CPU", "nvenc": "NVIDIA NVENC", "qsv": "Intel QSV"}.get(hw_accel, hw_accel)
+            hw_label = {"auto": "自動", "cpu": "CPU", "nvenc": "NVIDIA NVENC", "qsv": "Intel QSV"}.get(
+                hw_accel, hw_accel
+            )
             self._log(f"編碼: {encoding} | 加速: {hw_label} | 速度: {preset} | 品質: {crf}")
 
             config = ConvertConfig(
@@ -1479,7 +1525,6 @@ class GradioApp:
             ],
             outputs=[status_text, log_output],
         )
-
 
     def _process_subtitle(
         self,
